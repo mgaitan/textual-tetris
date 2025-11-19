@@ -20,7 +20,7 @@ classifiers = [
     "Operating System :: OS Independent",
     "Topic :: Games/Entertainment",
     "Topic :: Terminals",
-    "Topic :: User Interfaces :: Text-based",
+    "Environment :: Console",
 ]
 dependencies = ["textual"]
 
