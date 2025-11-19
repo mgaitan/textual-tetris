@@ -1,0 +1,63 @@
+[project]
+name = "textual-tetris"
+description = "A Tetris game for your terminal, built with the Textual framework."
+authors = [{name = "Martín Gaitán", email = "gaitan@gmail.com"}]
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
+readme = "README.md"
+requires-python = ">=3.12"
+keywords = ["tetris", "textual", "game", "console", "terminal"]
+version = "0.1.0"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Operating System :: OS Independent",
+    "Topic :: Games/Entertainment",
+    "Topic :: Terminals",
+    "Topic :: User Interfaces :: Text-based",
+]
+dependencies = ["textual"]
+
+[build-system]
+requires = ["flit_core >=3.8,<4"]
+build-backend = "flit_core.buildapi"
+
+[tool.flit.module]
+name = "textris"
+
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "W",      # pycodestyle (E, W) https://docs.astral.sh/ruff/rules/#pycodestyle-e-w
+    "F",      # https://docs.astral.sh/ruff/rules/#pyflakes-f
+    "I",      # isort
+    "C90",    # https://docs.astral.sh/ruff/rules/#mccabe-c90
+    "UP",     # https://docs.astral.sh/ruff/rules/#pyupgrade-up
+    "RUF",    # https://docs.astral.sh/ruff/rules/#ruff-specific-rules-ruf
+    "T10",    # remove pdbs
+    "ISC",    # https://docs.astral.sh/ruff/rules/#flake8-implicit-str-concat-isc
+    "SIM",    # https://docs.astral.sh/ruff/rules/#flake8-simplify-sim
+    "ASYNC",  # https://docs.astral.sh/ruff/rules/#flake8-async-async
+    "B",      # https://docs.astral.sh/ruff/rules/#flake8-bugbear-b
+    "C4",     # https://docs.astral.sh/ruff/rules/#flake8-comprehensions-c4
+    "PIE",    # https://docs.astral.sh/ruff/rules/#flake8-pie-pie
+    "FURB",   # https://docs.astral.sh/ruff/rules/#refurb-furb
+    "TID252", # https://docs.astral.sh/ruff/rules/relative-imports/
+]
+
+[project.urls]
+Repository = "https://github.com/mgaitan/textris"
+Issues = "https://github.com/mgaitan/textris/issues"
+
+[project.scripts]
+textual-tetris = "textris:main"
