@@ -167,7 +167,13 @@ class TetrisBoard(Static):
                 self.board[board_y][board_x] = self.current_piece.color
 
         # Clear any completed lines
-        self._clear_full_lines()
+        cleared = self._clear_full_lines()
+
+        # Notify app about scoring/level updates
+        try:
+            self.app.on_piece_locked(cleared)
+        except Exception:
+            pass
 
         # Spawn a new piece
         self.current_piece = TetrisPiece()
@@ -182,6 +188,7 @@ class TetrisBoard(Static):
             self.board = [[0 for _ in range(self.board_width)] for _ in range(cleared)] + new_rows
         else:
             self.board = new_rows
+        return cleared
 
     def rotate_piece(self):
         """Rotate the current piece"""
@@ -298,6 +305,10 @@ class TetrisApp(App):
         super().__init__(**kwargs)
         self.game_timer = None
         self.drop_interval = 1.0  # Seconds between automatic drops
+        self.score = 0
+        self.level = 1
+        self.lines_cleared = 0
+        self.lines_per_level = 10
 
     CSS = """
     Screen {
@@ -419,9 +430,12 @@ class TetrisApp(App):
         """Update all game displays after widgets are mounted"""
         self.board.update_display()
         self.next_piece_widget.update_piece(TetrisPiece())
+        self._refresh_score_widget()
 
     def start_game_timer(self):
         """Start the automatic piece dropping timer"""
+        if self.game_timer:
+            self.game_timer.pause()
         self.game_timer = self.set_interval(self.drop_interval, self.auto_drop)
 
     def auto_drop(self):
@@ -444,6 +458,34 @@ class TetrisApp(App):
     def action_rotate(self):
         """Rotate piece"""
         self.board.rotate_piece()
+
+    def on_piece_locked(self, cleared_lines: int):
+        """Update score/level/timing after a piece locks."""
+        if cleared_lines:
+            # Classic scoring scale per number of lines cleared at once
+            line_score = {1: 100, 2: 300, 3: 500, 4: 800}.get(cleared_lines, cleared_lines * 200)
+            self.score += line_score * self.level
+            self.lines_cleared += cleared_lines
+        else:
+            # Small reward just for locking a piece
+            self.score += 10
+
+        # Level up every N cleared lines
+        new_level = max(1, 1 + self.lines_cleared // self.lines_per_level)
+        if new_level != self.level:
+            self.level = new_level
+            # Speed up drop interval; clamp to a reasonable minimum
+            self.drop_interval = max(0.1, 1.0 - (self.level - 1) * 0.1)
+            self.start_game_timer()
+
+        self._refresh_score_widget()
+
+    def _refresh_score_widget(self):
+        """Push current score state to the widget."""
+        score_widget = self.score_widget
+        score_widget.score = self.score
+        score_widget.level = self.level
+        score_widget.lines = self.lines_cleared
 
 if __name__ == "__main__":
     app = TetrisApp()
