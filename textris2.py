@@ -173,8 +173,7 @@ class TetrisBoard(Static):
         self.app.on_piece_locked(cleared)
 
         # Spawn a new piece
-        self.current_piece = TetrisPiece()
-        self.update_display()
+        self.app.spawn_next_piece()
 
     def _clear_full_lines(self):
         """Remove filled rows and collapse the board."""
@@ -306,6 +305,7 @@ class TetrisApp(App):
         self.level = 1
         self.lines_cleared = 0
         self.lines_per_level = 10
+        self.next_piece = TetrisPiece()
 
     CSS = """
     Screen {
@@ -425,8 +425,13 @@ class TetrisApp(App):
 
     def _update_all_displays(self):
         """Update all game displays after widgets are mounted"""
+        # Ensure the board starts with the queued next piece
+        self.board.current_piece = self.next_piece
         self.board.update_display()
-        self.next_piece_widget.update_piece(TetrisPiece())
+
+        # Queue and show the following piece
+        self._queue_new_piece()
+        self._refresh_score_widget()
         self._refresh_score_widget()
 
     def start_game_timer(self):
@@ -476,6 +481,17 @@ class TetrisApp(App):
             self.start_game_timer()
 
         self._refresh_score_widget()
+
+    def spawn_next_piece(self):
+        """Move queued next piece to the board and queue another."""
+        self.board.current_piece = self.next_piece
+        self.board.update_display()
+        self._queue_new_piece()
+
+    def _queue_new_piece(self):
+        """Create the next piece and update the preview widget."""
+        self.next_piece = TetrisPiece()
+        self.next_piece_widget.update_piece(self.next_piece)
 
     def _refresh_score_widget(self):
         """Push current score state to the widget."""
