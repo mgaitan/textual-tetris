@@ -395,7 +395,7 @@ class TetrisApp(App):
         ("right,d", "move_right", "Move Right"),
         ("down,s", "move_down", "Move Down"),
         ("up,w,space", "rotate", "Rotate"),
-        ("q", "quit", "Quit"),
+        ("ctrl+q", "quit", "Quit"),
     ]
 
     def compose(self) -> ComposeResult:
@@ -415,7 +415,7 @@ class TetrisApp(App):
                         yield Label("←/A: Move Left")
                         yield Label("→/D: Move Right")
                         yield Label("↓/S: Move Down")
-                        yield Label("Q: Quit")
+                        yield Label("Ctrl+Q: Quit")
 
     def on_mount(self):
         """Initialize the game"""
