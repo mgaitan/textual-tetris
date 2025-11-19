@@ -310,6 +310,7 @@ class TetrisApp(App):
         self.lines_cleared = 0
         self.lines_per_level = 10
         self.next_piece = TetrisPiece()
+        self.game_over = False
 
     CSS = """
     Screen {
@@ -330,11 +331,13 @@ class TetrisApp(App):
         padding: 1;
         background: $panel;
         border: solid $accent;
+        layers: base overlay;
     }
 
     #board-display {
         margin: 1;
         padding: 1;
+        layer: base;
     }
 
     #sidebar {
@@ -351,10 +354,23 @@ class TetrisApp(App):
     }
 
     #score-container {
-        height: 9;
         padding: 1;
         background: $panel;
         border: solid $accent;
+    }
+
+    #game-over-overlay {
+        layer: overlay;
+        dock: fill;
+        content-align: center middle;
+        text-style: bold;
+        color: $error;
+        background: $background 90%;
+        display: none;
+    }
+
+    .game-over #game-over-overlay {
+        display: block;
     }
 
     .section-title {
@@ -395,6 +411,7 @@ class TetrisApp(App):
         ("up,w", "rotate", "Rotate"),
         ("space", "hard_drop", "Drop"),
         ("ctrl+q", "quit", "Quit"),
+        ("r", "restart", "Restart"),
     ]
 
     def compose(self) -> ComposeResult:
@@ -403,6 +420,7 @@ class TetrisApp(App):
             with Horizontal():
                 with Container(id="board-container"):
                     yield TetrisBoard(id="board")
+                    yield Static("GAME OVER\nPress R to restart", id="game-over-overlay")
                 with Vertical(id="sidebar"):
                     with Container(id="next-piece-container"):
                         yield NextPieceWidget(id="next-piece")
@@ -416,12 +434,15 @@ class TetrisApp(App):
                         yield Label("↓/S: Move Down")
                         yield Label("Space: Hard Drop")
                         yield Label("Ctrl+Q: Quit")
+                        yield Label("R: Restart")
 
     def on_mount(self):
         """Initialize the game"""
         self.board = self.query_one("#board", TetrisBoard)
         self.next_piece_widget = self.query_one("#next-piece", NextPieceWidget)
         self.score_widget = self.query_one("#score-widget", ScoreWidget)
+        self.board_container = self.query_one("#board-container")
+        self.game_over_overlay = self.query_one("#game-over-overlay", Static)
 
         # Give widgets time to mount, then update displays
         self.call_after_refresh(self._update_all_displays)
@@ -445,30 +466,44 @@ class TetrisApp(App):
         if self.game_timer:
             self.game_timer.pause()
         self.game_timer = self.set_interval(self.drop_interval, self.auto_drop)
+        if self.game_over and self.game_timer:
+            self.game_timer.pause()
 
     def auto_drop(self):
         """Automatically drop the current piece"""
+        if self.game_over:
+            return
         # move_piece will lock the piece if it can't go lower
         self.board.move_piece(0, 1)
 
     def action_move_left(self):
         """Move piece left"""
+        if self.game_over:
+            return
         self.board.move_piece(-1, 0)
 
     def action_move_right(self):
         """Move piece right"""
+        if self.game_over:
+            return
         self.board.move_piece(1, 0)
 
     def action_move_down(self):
         """Move piece down"""
+        if self.game_over:
+            return
         self.board.move_piece(0, 1)
 
     def action_rotate(self):
         """Rotate piece"""
+        if self.game_over:
+            return
         self.board.rotate_piece()
 
     def action_hard_drop(self):
         """Instantly drop the piece to the lowest valid position."""
+        if self.game_over:
+            return
         while self.board.move_piece(0, 1):
             pass
 
@@ -495,7 +530,12 @@ class TetrisApp(App):
 
     def spawn_next_piece(self):
         """Move queued next piece to the board and queue another."""
+        if self.game_over:
+            return
         self.board.current_piece = self.next_piece
+        if self.board.check_collision():
+            self._handle_game_over()
+            return
         self.board.update_display()
         self._queue_new_piece()
 
@@ -510,6 +550,38 @@ class TetrisApp(App):
         score_widget.score = self.score
         score_widget.level = self.level
         score_widget.lines = self.lines_cleared
+
+    def _handle_game_over(self):
+        """Show game over UI and stop input/timers."""
+        self.game_over = True
+        if self.game_timer:
+            self.game_timer.pause()
+        self.board_container.add_class("game-over")
+        self.game_over_overlay.display = True
+
+    def action_restart(self):
+        """Reset the game state and start anew."""
+        # Reset stats and speed
+        self.score = 0
+        self.level = 1
+        self.lines_cleared = 0
+        self.drop_interval = 1.0
+        self.game_over = False
+
+        # Reset board contents and queued pieces
+        self.board.board = [[0 for _ in range(self.board.board_width)] for _ in range(self.board.board_height)]
+        self.next_piece = TetrisPiece()
+        self.board.current_piece = self.next_piece
+
+        # Hide game over overlay
+        self.board_container.remove_class("game-over")
+        self.game_over_overlay.display = False
+
+        # Refresh UI and restart timer
+        self.board.update_display()
+        self._queue_new_piece()
+        self._refresh_score_widget()
+        self.start_game_timer()
 
 if __name__ == "__main__":
     app = TetrisApp()
