@@ -419,7 +419,7 @@ class TetrisApp(App):
 
     def compose(self) -> ComposeResult:
         with Container(id="game-container"):
-            yield Label("🎮 TETRIS 🎮", id="title")
+            yield Label("🎮 TEXTRIS 🕹", id="title")
             with Horizontal():
                 with Container(id="board-container"):
                     yield TetrisBoard(id="board")
