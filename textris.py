@@ -378,7 +378,6 @@ class TetrisApp(App):
         text-align: center;
         text-style: bold;
         color: $accent;
-        margin-bottom: 1;
     }
 
     .score-number {
@@ -394,7 +393,7 @@ class TetrisApp(App):
         padding: 1;
         background: $panel;
         border: solid $accent;
-        height: 11;
+        height: 12;
     }
 
     #title {
@@ -433,9 +432,8 @@ class TetrisApp(App):
                         yield Label("←/A: Move Left")
                         yield Label("→/D: Move Right")
                         yield Label("↓/S: Move Down")
-                        yield Label("Space: Hard Drop")
+                        yield Label("Space: Drop")
                         yield Label("Ctrl+Q: Quit")
-                        yield Label("R: Restart")
 
     def on_mount(self):
         """Initialize the game"""
