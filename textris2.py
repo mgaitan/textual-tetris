@@ -395,7 +395,8 @@ class TetrisApp(App):
         ("left,a", "move_left", "Move Left"),
         ("right,d", "move_right", "Move Right"),
         ("down,s", "move_down", "Move Down"),
-        ("up,w,space", "rotate", "Rotate"),
+        ("up,w", "rotate", "Rotate"),
+        ("space", "hard_drop", "Hard Drop"),
         ("ctrl+q", "quit", "Quit"),
     ]
 
@@ -412,10 +413,11 @@ class TetrisApp(App):
                         yield ScoreWidget(id="score-widget")
                     with Container(id="controls"):
                         yield Label("CONTROLS", classes="section-title")
-                        yield Label("↑/W/Space: Rotate")
+                        yield Label("↑/W: Rotate")
                         yield Label("←/A: Move Left")
                         yield Label("→/D: Move Right")
                         yield Label("↓/S: Move Down")
+                        yield Label("Space: Hard Drop")
                         yield Label("Ctrl+Q: Quit")
 
     def on_mount(self):
@@ -467,6 +469,11 @@ class TetrisApp(App):
     def action_rotate(self):
         """Rotate piece"""
         self.board.rotate_piece()
+
+    def action_hard_drop(self):
+        """Instantly drop the piece to the lowest valid position."""
+        while self.board.move_piece(0, 1):
+            pass
 
     def on_piece_locked(self, cleared_lines: int):
         """Update score/level/timing after a piece locks."""
