@@ -276,28 +276,25 @@ class ScoreWidget(Static):
         super().__init__(**kwargs)
 
     def compose(self) -> ComposeResult:
-        yield Label("SCORE", classes="section-title")
-        yield Label(str(self.score), id="score-value", classes="score-number")
-        yield Label("LEVEL", classes="section-title")
-        yield Label(str(self.level), id="level-value", classes="score-number")
-        yield Label("LINES", classes="section-title")
-        yield Label(str(self.lines), id="lines-value", classes="score-number")
+        yield Label(f"SCORE {self.score}", id="score-value", classes="section-title")
+        yield Label(f"LEVEL {self.level}", id="level-value", classes="score-number")
+        yield Label(f"LINES {self.lines}", id="lines-value", classes="section-title")
 
     def watch_score(self, score: int):
         try:
-            self.query_one("#score-value", Label).update(str(score))
+            self.query_one("#score-value", Label).update(f"SCORE {score}")
         except NoMatches:
             pass
 
     def watch_level(self, level: int):
         try:
-            self.query_one("#level-value", Label).update(str(level))
+            self.query_one("#level-value", Label).update(f"LEVEL {level}")
         except NoMatches:
             pass
 
     def watch_lines(self, lines: int):
         try:
-            self.query_one("#lines-value", Label).update(str(lines))
+            self.query_one("#lines-value", Label).update(f"LINES {lines}")
         except NoMatches:
             pass
 
@@ -354,7 +351,7 @@ class TetrisApp(App):
     }
 
     #score-container {
-        height: 12;
+        height: 9;
         padding: 1;
         background: $panel;
         border: solid $accent;
@@ -380,7 +377,7 @@ class TetrisApp(App):
         padding: 1;
         background: $panel;
         border: solid $accent;
-        height: 8;
+        height: 11;
     }
 
     #title {
@@ -396,7 +393,7 @@ class TetrisApp(App):
         ("right,d", "move_right", "Move Right"),
         ("down,s", "move_down", "Move Down"),
         ("up,w", "rotate", "Rotate"),
-        ("space", "hard_drop", "Hard Drop"),
+        ("space", "hard_drop", "Drop"),
         ("ctrl+q", "quit", "Quit"),
     ]
 
