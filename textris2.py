@@ -170,7 +170,8 @@ class TetrisBoard(Static):
         # Clear any completed lines
         cleared = self._clear_full_lines()
 
-        # Notify app about scoring/level updates
+        # Notify app about scoring/level updates.
+        # NOTE: If this raises (e.g., during shutdown), allow the error rather than hiding it.
         self.app.on_piece_locked(cleared)
 
         # Spawn a new piece
