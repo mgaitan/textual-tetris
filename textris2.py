@@ -282,22 +282,19 @@ class ScoreWidget(Static):
         yield Label(str(self.lines), id="lines-value", classes="score-number")
 
     def watch_score(self, score: int):
-        try:
-            self.query_one("#score-value", Label).update(str(score))
-        except:
-            pass  # Widget not ready yet
+        if not self.is_mounted:
+            return
+        self.query_one("#score-value", Label).update(str(score))
 
     def watch_level(self, level: int):
-        try:
-            self.query_one("#level-value", Label).update(str(level))
-        except:
-            pass  # Widget not ready yet
+        if not self.is_mounted:
+            return
+        self.query_one("#level-value", Label).update(str(level))
 
     def watch_lines(self, lines: int):
-        try:
-            self.query_one("#lines-value", Label).update(str(lines))
-        except:
-            pass  # Widget not ready yet
+        if not self.is_mounted:
+            return
+        self.query_one("#lines-value", Label).update(str(lines))
 
 class TetrisApp(App):
     """Main Tetris application"""
