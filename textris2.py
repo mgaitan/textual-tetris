@@ -10,6 +10,7 @@ from textual.widgets import Static, Label
 from textual.containers import Container, Horizontal, Vertical
 from textual.reactive import reactive
 from rich.text import Text
+from textual.css.query import NoMatches
 import random
 
 # Compact hex-based shape definitions (4x4 grid, see README snippet)
@@ -282,19 +283,22 @@ class ScoreWidget(Static):
         yield Label(str(self.lines), id="lines-value", classes="score-number")
 
     def watch_score(self, score: int):
-        if not self.is_mounted:
-            return
-        self.query_one("#score-value", Label).update(str(score))
+        try:
+            self.query_one("#score-value", Label).update(str(score))
+        except NoMatches:
+            pass
 
     def watch_level(self, level: int):
-        if not self.is_mounted:
-            return
-        self.query_one("#level-value", Label).update(str(level))
+        try:
+            self.query_one("#level-value", Label).update(str(level))
+        except NoMatches:
+            pass
 
     def watch_lines(self, lines: int):
-        if not self.is_mounted:
-            return
-        self.query_one("#lines-value", Label).update(str(lines))
+        try:
+            self.query_one("#lines-value", Label).update(str(lines))
+        except NoMatches:
+            pass
 
 class TetrisApp(App):
     """Main Tetris application"""
