@@ -9,68 +9,41 @@ from textual.app import App, ComposeResult
 from textual.widgets import Static, Label
 from textual.containers import Container, Horizontal, Vertical
 from textual.reactive import reactive
-from textual import events
 from rich.text import Text
-from rich.style import Style
 import random
 
-# Tetris piece definitions (standard Tetrominos)
+# Compact hex-based shape definitions (4x4 grid, see README snippet)
 PIECES = {
-    'I': {
-        'color': 'cyan',
-        'shapes': [
-            [[1, 1, 1, 1]],
-            [[1], [1], [1], [1]]
-        ]
-    },
-    'O': {
-        'color': 'yellow',
-        'shapes': [
-            [[1, 1], [1, 1]]
-        ]
-    },
-    'T': {
-        'color': 'magenta',
-        'shapes': [
-            [[0, 1, 0], [1, 1, 1]],
-            [[1, 0], [1, 1], [1, 0]],
-            [[1, 1, 1], [0, 1, 0]],
-            [[0, 1], [1, 1], [0, 1]]
-        ]
-    },
-    'S': {
-        'color': 'green',
-        'shapes': [
-            [[0, 1, 1], [1, 1, 0]],
-            [[1, 0], [1, 1], [0, 1]]
-        ]
-    },
-    'Z': {
-        'color': 'red',
-        'shapes': [
-            [[1, 1, 0], [0, 1, 1]],
-            [[0, 1], [1, 1], [1, 0]]
-        ]
-    },
-    'J': {
-        'color': 'blue',
-        'shapes': [
-            [[1, 0, 0], [1, 1, 1]],
-            [[1, 1], [1, 0], [1, 0]],
-            [[1, 1, 1], [0, 0, 1]],
-            [[0, 1], [0, 1], [1, 1]]
-        ]
-    },
-    'L': {
-        'color': 'bright_yellow',
-        'shapes': [
-            [[0, 0, 1], [1, 1, 1]],
-            [[1, 0], [1, 0], [1, 1]],
-            [[1, 1, 1], [1, 0, 0]],
-            [[1, 1], [0, 1], [0, 1]]
-        ]
-    }
+    'O': {'color': 'yellow',        'codes': ['56a9', '6a95', 'a956', '956a']},
+    'I': {'color': 'cyan',          'codes': ['4567', '26ae', 'ba98', 'd951']},
+    'J': {'color': 'blue',          'codes': ['0456', '2159', 'a654', '8951']},
+    'L': {'color': 'bright_yellow', 'codes': ['2654', 'a951', '8456', '0159']},
+    'T': {'color': 'magenta',       'codes': ['1456', '6159', '9654', '4951']},
+    'Z': {'color': 'red',           'codes': ['0156', '2659', 'a954', '8451']},
+    'S': {'color': 'green',         'codes': ['1254', 'a651', '8956', '0459']},
 }
+
+
+def hex_code_to_coords(code: str):
+    """Convert a 4x4 hex code string into raw coordinate pairs (x, y)."""
+    coords = []
+    for char in code:
+        value = int(char, 16)
+        y, x = divmod(value, 4)
+        coords.append((x, y))  # store as (x, y)
+    return coords
+
+
+def coords_to_matrix(coords):
+    """Turn a list of (x, y) coords into a minimal 2D matrix (for previews)."""
+    max_x = max(x for x, _ in coords)
+    max_y = max(y for _, y in coords)
+    width = max_x + 1
+    height = max_y + 1
+    matrix = [[0 for _ in range(width)] for _ in range(height)]
+    for x, y in coords:
+        matrix[y][x] = 1
+    return matrix
 
 class TetrisPiece:
     def __init__(self, piece_type=None):
@@ -79,17 +52,22 @@ class TetrisPiece:
 
         self.type = piece_type
         self.color = PIECES[piece_type]['color']
-        self.shapes = PIECES[piece_type]['shapes']
+        self.codes = PIECES[piece_type]['codes']
         self.rotation = 0
         self.x = 4  # Start at center of board
         self.y = 0
 
     @property
     def shape(self):
-        return self.shapes[self.rotation % len(self.shapes)]
+        return hex_code_to_coords(self.codes[self.rotation % len(self.codes)])
+
+    @property
+    def blocks(self):
+        """Absolute board coords occupied by this piece."""
+        return [(self.x + px, self.y + py) for px, py in self.shape]
 
     def rotate(self):
-        self.rotation = (self.rotation + 1) % len(self.shapes)
+        self.rotation = (self.rotation + 1) % len(self.codes)
 
 class TetrisBoard(Static):
     """The main game board widget"""
@@ -117,15 +95,10 @@ class TetrisBoard(Static):
 
         # Add current piece to display board
         if self.current_piece:
-            piece_shape = self.current_piece.shape
-            for py, row in enumerate(piece_shape):
-                for px, cell in enumerate(row):
-                    if cell:  # Only render non-zero cells
-                        board_x = self.current_piece.x + px
-                        board_y = self.current_piece.y + py
-                        if (0 <= board_x < self.board_width and
-                            0 <= board_y < self.board_height):
-                            display_board[board_y][board_x] = self.current_piece.color
+            for board_x, board_y in self.current_piece.blocks:
+                if (0 <= board_x < self.board_width and
+                    0 <= board_y < self.board_height):
+                    display_board[board_y][board_x] = self.current_piece.color
 
         # Add top border
         text.append("┌" + "─" * (self.board_width * 2) + "┐\n", style="bold white")
@@ -170,22 +143,16 @@ class TetrisBoard(Static):
 
     def check_collision(self):
         """Check if current piece collides with boundaries or other pieces"""
-        piece_shape = self.current_piece.shape
+        for board_x, board_y in self.current_piece.blocks:
 
-        for py, row in enumerate(piece_shape):
-            for px, cell in enumerate(row):
-                if cell:  # Only check non-zero cells
-                    board_x = self.current_piece.x + px
-                    board_y = self.current_piece.y + py
+            # Check boundaries
+            if (board_x < 0 or board_x >= self.board_width or
+                board_y >= self.board_height):
+                return True
 
-                    # Check boundaries
-                    if (board_x < 0 or board_x >= self.board_width or
-                        board_y >= self.board_height):
-                        return True
-
-                    # Check collision with existing pieces (if board_y >= 0)
-                    if board_y >= 0 and self.board[board_y][board_x] != 0:
-                        return True
+            # Check collision with existing pieces (if board_y >= 0)
+            if board_y >= 0 and self.board[board_y][board_x] != 0:
+                return True
 
         return False
 
@@ -215,10 +182,10 @@ class NextPieceWidget(Static):
         yield Static(self.render_next_piece(), id="next-piece-display")
 
     def render_next_piece(self) -> Text:
-        shape = self.next_piece.shape
+        shape_matrix = coords_to_matrix(self.next_piece.shape)
         color = self.next_piece.color
-        shape_h = len(shape)
-        shape_w = max(len(r) for r in shape)
+        shape_h = len(shape_matrix)
+        shape_w = max(len(r) for r in shape_matrix)
         dim     = max(shape_h, shape_w, 4)
 
         text = Text()
@@ -235,7 +202,7 @@ class NextPieceWidget(Static):
             text.append(empty)
 
         # each shape row, centered horizontally
-        for row in shape:
+        for row in shape_matrix:
             # left padding
             left   = (dim - len(row)) // 2
             right  = dim - len(row) - left
