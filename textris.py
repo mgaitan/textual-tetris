@@ -1,10 +1,3 @@
-# /// script
-# requires-python = ">=3.12"
-# dependencies = [
-#   "textual",
-# ]
-# ///
-
 import contextlib
 import os
 import random
