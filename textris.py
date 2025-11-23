@@ -11,7 +11,7 @@ from textual.css.query import NoMatches
 from textual.reactive import reactive
 from textual.widgets import Label, Static
 
-# Compact hex-based shape definitions (4x4 grid, see README snippet)
+# Compact hex-based shape definitions (4x4 grid)
 PIECES = {
     "O": {"color": "yellow", "codes": ["56a9", "6a95", "a956", "956a"]},
     "I": {"color": "cyan", "codes": ["4567", "26ae", "ba98", "d951"]},
@@ -22,23 +22,10 @@ PIECES = {
     "S": {"color": "green", "codes": ["1254", "a651", "8956", "0459"]},
 }
 
-
-def hex_code_to_coords(code: str):
-    """Convert a 4x4 hex code string into raw coordinate pairs (x, y)."""
-    coords = []
-    for char in code:
-        value = int(char, 16)
-        y, x = divmod(value, 4)
-        coords.append((x, y))  # store as (x, y)
-    return coords
-
-
 def coords_to_matrix(coords):
     """Turn a list of (x, y) coords into a minimal 2D matrix (for previews)."""
-    max_x = max(x for x, _ in coords)
-    max_y = max(y for _, y in coords)
-    width = max_x + 1
-    height = max_y + 1
+    width = max(x for x, _ in coords) + 1
+    height = max(y for _, y in coords) + 1
     matrix = [[0 for _ in range(width)] for _ in range(height)]
     for x, y in coords:
         matrix[y][x] = 1
@@ -58,8 +45,14 @@ class TetrisPiece:
         self.y = 0
 
     @property
-    def shape(self):
-        return hex_code_to_coords(self.code)
+    def shape(self) -> list(tuple[int, int]):
+        """expand the Hex code into a list of (x, y) coords relative to a 4x4 grid """
+        coords = []
+        for char in self.code:
+            value = int(char, 16)
+            y, x = divmod(value, 4)
+            coords.append((x, y))
+        return coords
 
     @property
     def blocks(self):
@@ -462,41 +455,35 @@ class TetrisApp(App):
 
     def auto_drop(self):
         """Automatically drop the current piece"""
-        if self.game_over:
-            return
-        # move_piece will lock the piece if it can't go lower
-        self.board.move_piece(0, 1)
+        if not self.game_over:
+            # move_piece will lock the piece if it can't go lower
+            self.board.move_piece(0, 1)
 
     def action_move_left(self):
         """Move piece left"""
-        if self.game_over:
-            return
-        self.board.move_piece(-1, 0)
+        if not self.game_over:
+            self.board.move_piece(-1, 0)
 
     def action_move_right(self):
         """Move piece right"""
-        if self.game_over:
-            return
-        self.board.move_piece(1, 0)
+        if not self.game_over:
+            self.board.move_piece(1, 0)
 
     def action_move_down(self):
         """Move piece down"""
-        if self.game_over:
-            return
-        self.board.move_piece(0, 1)
+        if not self.game_over:
+            self.board.move_piece(0, 1)
 
     def action_rotate(self):
         """Rotate piece"""
-        if self.game_over:
-            return
-        self.board.rotate_piece()
+        if not self.game_over:
+            self.board.rotate_piece()
 
     def action_hard_drop(self):
         """Instantly drop the piece to the lowest valid position."""
-        if self.game_over:
-            return
-        while self.board.move_piece(0, 1):
-            pass
+        if not self.game_over:
+            while self.board.move_piece(0, 1):
+                pass
 
     def on_piece_locked(self, cleared_lines: int):
         """Update score/level/timing after a piece locks."""
@@ -552,16 +539,10 @@ class TetrisApp(App):
 
     def action_restart(self):
         """Restart the whole process when game over."""
-        if not self.game_over:
-            return
-        # Relaunch the current Python process with same args for a clean state.
-        os.execl(sys.executable, sys.executable, *sys.argv)
-
+        if self.game_over:
+            # Relaunch the current Python process with same args for a clean state.
+            os.execl(sys.executable, sys.executable, *sys.argv)
 
 def main():
     app = TetrisApp()
     app.run()
-
-
-if __name__ == "__main__":
-    main()
