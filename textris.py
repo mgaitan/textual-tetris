@@ -286,6 +286,23 @@ class ScoreWidget(Static):
 class TetrisApp(App):
     """Main Tetris application"""
 
+    LIVE_BINDINGS = (
+        ("left,a", "move_left", "Move Left"),
+        ("right,d", "move_right", "Move Right"),
+        ("down,s", "move_down", "Move Down"),
+        ("up,w", "rotate", "Rotate"),
+        ("space", "hard_drop", "Drop"),
+    )
+
+    OTHER_BINDINGS = (
+        ("ctrl+q", "quit", "Quit"),
+        ("r", "restart", "Restart"),
+        ("ctrl+s", "screenshot", "Screenshot"),
+    )
+
+    BINDINGS = LIVE_BINDINGS + OTHER_BINDINGS
+    LIVE_ACTIONS = tuple(binding[1] for binding in LIVE_BINDINGS)
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.game_timer = None
@@ -388,17 +405,6 @@ class TetrisApp(App):
     }
     """
 
-    BINDINGS = (
-        ("left,a", "move_left", "Move Left"),
-        ("right,d", "move_right", "Move Right"),
-        ("down,s", "move_down", "Move Down"),
-        ("up,w", "rotate", "Rotate"),
-        ("space", "hard_drop", "Drop"),
-        ("ctrl+q", "quit", "Quit"),
-        ("r", "restart", "Restart"),
-        ("ctrl+s", "screenshot", "Screenshot"),
-    )
-
     def compose(self) -> ComposeResult:
         with Container(id="game-container"):
             yield Label("🎮 TETRIS 🕹", id="title")
@@ -460,30 +466,21 @@ class TetrisApp(App):
             self.board.move_piece(0, 1)
 
     def action_move_left(self):
-        """Move piece left"""
-        if not self.game_over:
-            self.board.move_piece(-1, 0)
+        self.board.move_piece(-1, 0)
 
     def action_move_right(self):
-        """Move piece right"""
-        if not self.game_over:
-            self.board.move_piece(1, 0)
+        self.board.move_piece(1, 0)
 
     def action_move_down(self):
-        """Move piece down"""
-        if not self.game_over:
-            self.board.move_piece(0, 1)
+        self.board.move_piece(0, 1)
 
     def action_rotate(self):
-        """Rotate piece"""
-        if not self.game_over:
-            self.board.rotate_piece()
+        self.board.rotate_piece()
 
     def action_hard_drop(self):
         """Instantly drop the piece to the lowest valid position."""
-        if not self.game_over:
-            while self.board.move_piece(0, 1):
-                pass
+        while self.board.move_piece(0, 1):
+            pass
 
     def on_piece_locked(self, cleared_lines: int):
         """Update score/level/timing after a piece locks."""
@@ -536,12 +533,19 @@ class TetrisApp(App):
             self.game_timer.pause()
         self.board_container.add_class("game-over")
         self.game_over_overlay.display = True
+        self.refresh_bindings()
 
     def action_restart(self):
         """Restart the whole process when game over."""
         if self.game_over:
             # Relaunch the current Python process with same args for a clean state.
             os.execl(sys.executable, sys.executable, *sys.argv)
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        """Disable live controls when the game has ended."""
+        # ref: https://textual.textualize.io/guide/actions/#dynamic-actions
+        if not (self.game_over and action in self.LIVE_ACTIONS):
+            return True
 
 def main():
     app = TetrisApp()
