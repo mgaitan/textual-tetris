@@ -40,7 +40,6 @@ class TetrisPiece:
         self.type = piece_type
         self.color = PIECES[piece_type]["color"]
         self.codes = deque(PIECES[piece_type]["codes"])
-        self.code = self.codes[0]
         self.x = 4  # Start at center of board
         self.y = 0
 
@@ -59,13 +58,15 @@ class TetrisPiece:
         """Absolute board coords occupied by this piece."""
         return [(self.x + px, self.y + py) for px, py in self.shape]
 
+    @property
+    def code(self):
+        return self.codes[0]
+
     def rotate(self):
         self.codes.rotate(-1)
-        self.code = self.codes[0]
 
     def undo_rotate(self):
         self.codes.rotate(1)
-        self.code = self.codes[0]
 
 
 class TetrisBoard(Static):
@@ -314,7 +315,7 @@ class TetrisApp(App):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.game_timer = None
-        self.drop_interval = 1.0  # Seconds between automatic drops
+        self.drop_interval = 1.0
         self.score = 0
         self.level = 1
         self.lines_cleared = 0
@@ -506,7 +507,7 @@ class TetrisApp(App):
         if new_level != self.level:
             self.level = new_level
             # Speed up drop interval; clamp to a reasonable minimum
-            self.drop_interval = max(0.1, 1.0 - (self.level - 1) * 0.1)
+            self.drop_interval = self._drop_interval_for_level(self.level)
             self.start_game_timer()
 
         self._refresh_score_widget()
@@ -533,6 +534,15 @@ class TetrisApp(App):
         score_widget.score = self.score
         score_widget.level = self.level
         score_widget.lines = self.lines_cleared
+
+    @staticmethod
+    def _drop_interval_for_level(level: int) -> float:
+        """Return the official Tetris guideline drop speed for the given level."""
+        exponent = level - 1
+        base = 0.8 - exponent * 0.007
+        # Clamp base to avoid negative intervals at high levels
+        base = max(base, 0.001)
+        return max(0.02, base**exponent)
 
     def _handle_game_over(self):
         """Show game over UI and stop input/timers."""
