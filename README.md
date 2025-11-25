@@ -9,6 +9,9 @@ The easiest way is using `uvx` (part of [uv](https://docs.astral.sh/uv/)):
 uvx textual-tetris
 ```
 
+Blog post: https://mgaitan.github.io/en/posts/textual-tetris/
+
+
 ## The mandatory screenshot 
 
 ![](screenshot.svg)
