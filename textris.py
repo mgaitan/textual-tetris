@@ -407,7 +407,8 @@ class TetrisApp(App):
         self.next_piece = TetrisPiece()
         self.game_over = False
 
-    CSS = """
+    CSS = (
+        """
     Screen {
         layout: vertical;
         background: #111927;
@@ -458,6 +459,7 @@ class TetrisApp(App):
     #next-piece-container {
         width: __NEXT_CONTAINER_WIDTH__;
         height: auto;
+        margin-top: 1;
         margin-bottom: 1;
         padding: 1;
         background: #1a2430;
@@ -502,21 +504,21 @@ class TetrisApp(App):
     Footer {
         dock: bottom;
     }
-    """.replace("__BOARD_CONTAINER_WIDTH__", str(BOARD_CONTAINER_WIDTH)).replace(
-        "__SIDEBAR_WIDTH__", str(SIDEBAR_WIDTH)
-    ).replace("__NEXT_CONTAINER_WIDTH__", str(NEXT_CONTAINER_WIDTH))
+    """.replace("__BOARD_CONTAINER_WIDTH__", str(BOARD_CONTAINER_WIDTH))
+        .replace("__SIDEBAR_WIDTH__", str(SIDEBAR_WIDTH))
+        .replace("__NEXT_CONTAINER_WIDTH__", str(NEXT_CONTAINER_WIDTH))
+    )
 
     def compose(self) -> ComposeResult:
-        with Container(id="game-container"):
-            with Horizontal(id="playfield"):
-                with Container(id="board-container"):
-                    yield TetrisBoard(id="board")
-                    yield Static("GAME OVER\nPress R to restart", id="game-over-overlay")
-                with Vertical(id="sidebar"):
-                    with Container(id="next-piece-container"):
-                        yield NextPieceWidget(id="next-piece")
-                    with Container(id="score-container"):
-                        yield ScoreWidget(id="score-widget")
+        with Container(id="game-container"), Horizontal(id="playfield"):
+            with Container(id="board-container"):
+                yield TetrisBoard(id="board")
+                yield Static("GAME OVER\nPress R to restart", id="game-over-overlay")
+            with Vertical(id="sidebar"):
+                with Container(id="next-piece-container"):
+                    yield NextPieceWidget(id="next-piece")
+                with Container(id="score-container"):
+                    yield ScoreWidget(id="score-widget")
         yield Footer()
 
     def on_mount(self):
