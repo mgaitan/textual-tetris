@@ -29,17 +29,21 @@ CELL_WIDTH = 4
 CELL_FILL = "█" * CELL_WIDTH
 CELL_EMPTY = " " * CELL_WIDTH
 BOARD_CONTAINER_WIDTH = 46
-SIDEBAR_WIDTH = 22
-NEXT_CONTAINER_WIDTH = 22
+MAX_PREVIEW_DIM = 4
+PREVIEW_RENDER_WIDTH = MAX_PREVIEW_DIM * CELL_WIDTH + 2
+NEXT_CONTAINER_WIDTH = PREVIEW_RENDER_WIDTH + 4
+SIDEBAR_WIDTH = NEXT_CONTAINER_WIDTH
 
 
 def coords_to_matrix(coords):
     """Turn a list of (x, y) coords into a minimal 2D matrix (for previews)."""
-    width = max(x for x, _ in coords) + 1
-    height = max(y for _, y in coords) + 1
+    min_x = min(x for x, _ in coords)
+    min_y = min(y for _, y in coords)
+    width = max(x for x, _ in coords) - min_x + 1
+    height = max(y for _, y in coords) - min_y + 1
     matrix = [[0 for _ in range(width)] for _ in range(height)]
     for x, y in coords:
-        matrix[y][x] = 1
+        matrix[y - min_y][x - min_x] = 1
     return matrix
 
 
@@ -231,11 +235,15 @@ class NextPieceWidget(Static):
         color = self.next_piece.color
         shape_h = len(shape_matrix)
         shape_w = max(len(r) for r in shape_matrix)
-        dim = max(shape_h, shape_w) + 1
+        dim = max(MAX_PREVIEW_DIM, shape_h, shape_w)
+        content_width = dim * CELL_WIDTH
+        shape_render_width = shape_w * CELL_WIDTH
+        horizontal_left_pad = (content_width - shape_render_width) // 2
+        horizontal_right_pad = content_width - shape_render_width - horizontal_left_pad
 
         text = Text()
         # top border
-        text.append("┌" + "─" * (dim * CELL_WIDTH) + "┐\n", style="dim white")
+        text.append("┌" + "─" * content_width + "┐\n", style="dim white")
 
         # how many qnk rows above/below
         top_pad = (dim - shape_h) // 2
@@ -245,25 +253,22 @@ class NextPieceWidget(Static):
         for _ in range(top_pad):
             empty_row = Text()
             empty_row.append("│", style="dim white")
-            empty_row.append(CELL_EMPTY * dim)
+            empty_row.append(" " * content_width)
             empty_row.append("│\n", style="dim white")
             text.append_text(empty_row)
             text.append_text(empty_row.copy())
 
         # each shape row, centered horizontally
         for row in shape_matrix:
-            # left padding
-            left = (dim - len(row)) // 2
-            right = dim - len(row) - left
             rendered_row = Text()
             rendered_row.append("│", style="dim white")
-            rendered_row.append(CELL_EMPTY * left)
+            rendered_row.append(" " * horizontal_left_pad)
             for cell in row:
                 if cell:
                     rendered_row.append(CELL_FILL, style=f"bold {color}")
                 else:
                     rendered_row.append(CELL_EMPTY)
-            rendered_row.append(CELL_EMPTY * right)
+            rendered_row.append(" " * horizontal_right_pad)
             rendered_row.append("│\n", style="dim white")
             text.append_text(rendered_row)
             text.append_text(rendered_row.copy())
@@ -271,13 +276,13 @@ class NextPieceWidget(Static):
         for _ in range(bottom_pad):
             empty_row = Text()
             empty_row.append("│", style="dim white")
-            empty_row.append(CELL_EMPTY * dim)
+            empty_row.append(" " * content_width)
             empty_row.append("│\n", style="dim white")
             text.append_text(empty_row)
             text.append_text(empty_row.copy())
 
         # bottom border
-        text.append("└" + "─" * (dim * CELL_WIDTH) + "┘", style="dim white")
+        text.append("└" + "─" * content_width + "┘", style="dim white")
         return text
 
     def update_piece(self, piece):
