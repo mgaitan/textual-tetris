@@ -9,18 +9,28 @@ from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal, Vertical
 from textual.css.query import NoMatches
 from textual.reactive import reactive
-from textual.widgets import Label, Static
+from textual.screen import ModalScreen
+from textual.widgets import Footer, Label, Static
 
 # Compact hex-based shape definitions (4x4 grid)
 PIECES = {
-    "O": {"color": "yellow", "codes": ["56a9", "6a95", "a956", "956a"]},
-    "I": {"color": "cyan", "codes": ["4567", "26ae", "ba98", "d951"]},
-    "J": {"color": "blue", "codes": ["0456", "2159", "a654", "8951"]},
-    "L": {"color": "orange1", "codes": ["2654", "a951", "8456", "0159"]},
-    "T": {"color": "purple", "codes": ["1456", "6159", "9654", "4951"]},
-    "Z": {"color": "red", "codes": ["0156", "2659", "a954", "8451"]},
-    "S": {"color": "green", "codes": ["1254", "a651", "8956", "0459"]},
+    # Keep the familiar Guideline hue families, but use explicit tones that stay
+    # distinct across terminal themes.
+    "O": {"color": "#FFD23F", "codes": ["56a9", "6a95", "a956", "956a"]},
+    "I": {"color": "#49C6E5", "codes": ["4567", "26ae", "ba98", "d951"]},
+    "J": {"color": "#3A86FF", "codes": ["0456", "2159", "a654", "8951"]},
+    "L": {"color": "#FF9F1C", "codes": ["2654", "a951", "8456", "0159"]},
+    "T": {"color": "#9D4EDD", "codes": ["1456", "6159", "9654", "4951"]},
+    "Z": {"color": "#FF006E", "codes": ["0156", "2659", "a954", "8451"]},
+    "S": {"color": "#A7E916", "codes": ["1254", "a651", "8956", "0459"]},
 }
+
+CELL_WIDTH = 4
+CELL_FILL = "█" * CELL_WIDTH
+CELL_EMPTY = " " * CELL_WIDTH
+BOARD_CONTAINER_WIDTH = 46
+SIDEBAR_WIDTH = 22
+NEXT_CONTAINER_WIDTH = 22
 
 
 def coords_to_matrix(coords):
@@ -101,20 +111,23 @@ class TetrisBoard(Static):
                     display_board[board_y][board_x] = self.current_piece.color
 
         # Add top border
-        text.append("┌" + "─" * (self.board_width * 2) + "┐\n", style="bold white")
+        text.append("┌" + "─" * (self.board_width * CELL_WIDTH) + "┐\n", style="bold white")
 
         # Render each row
         for row in display_board:
-            text.append("│", style="bold white")
+            rendered_row = Text()
+            rendered_row.append("│", style="bold white")
             for cell in row:
                 if cell == 0:
-                    text.append("  ")
+                    rendered_row.append(CELL_EMPTY)
                 else:
-                    text.append("██", style=f"bold {cell}")
-            text.append("│\n", style="bold white")
+                    rendered_row.append(CELL_FILL, style=f"bold {cell}")
+            rendered_row.append("│\n", style="bold white")
+            text.append_text(rendered_row)
+            text.append_text(rendered_row.copy())
 
         # Add bottom border
-        text.append("└" + "─" * (self.board_width * 2) + "┘", style="bold white")
+        text.append("└" + "─" * (self.board_width * CELL_WIDTH) + "┘", style="bold white")
 
         return text
 
@@ -218,11 +231,11 @@ class NextPieceWidget(Static):
         color = self.next_piece.color
         shape_h = len(shape_matrix)
         shape_w = max(len(r) for r in shape_matrix)
-        dim = max(shape_h, shape_w, 4)
+        dim = max(shape_h, shape_w) + 1
 
         text = Text()
         # top border
-        text.append("┌" + "─" * (dim * 2) + "┐\n", style="dim white")
+        text.append("┌" + "─" * (dim * CELL_WIDTH) + "┐\n", style="dim white")
 
         # how many qnk rows above/below
         top_pad = (dim - shape_h) // 2
@@ -230,32 +243,41 @@ class NextPieceWidget(Static):
 
         # helper for an empty row
         for _ in range(top_pad):
-            text.append("│", style="dim white")
-            text.append("  " * dim)
-            text.append("│\n", style="dim white")
+            empty_row = Text()
+            empty_row.append("│", style="dim white")
+            empty_row.append(CELL_EMPTY * dim)
+            empty_row.append("│\n", style="dim white")
+            text.append_text(empty_row)
+            text.append_text(empty_row.copy())
 
         # each shape row, centered horizontally
         for row in shape_matrix:
             # left padding
             left = (dim - len(row)) // 2
             right = dim - len(row) - left
-            text.append("│", style="dim white")
-            text.append("  " * left)
+            rendered_row = Text()
+            rendered_row.append("│", style="dim white")
+            rendered_row.append(CELL_EMPTY * left)
             for cell in row:
                 if cell:
-                    text.append("██", style=f"bold {color}")
+                    rendered_row.append(CELL_FILL, style=f"bold {color}")
                 else:
-                    text.append("  ")
-            text.append("  " * right)
-            text.append("│\n", style="dim white")
+                    rendered_row.append(CELL_EMPTY)
+            rendered_row.append(CELL_EMPTY * right)
+            rendered_row.append("│\n", style="dim white")
+            text.append_text(rendered_row)
+            text.append_text(rendered_row.copy())
 
         for _ in range(bottom_pad):
-            text.append("│", style="dim white")
-            text.append("  " * dim)
-            text.append("│\n", style="dim white")
+            empty_row = Text()
+            empty_row.append("│", style="dim white")
+            empty_row.append(CELL_EMPTY * dim)
+            empty_row.append("│\n", style="dim white")
+            text.append_text(empty_row)
+            text.append_text(empty_row.copy())
 
         # bottom border
-        text.append("└" + "─" * (dim * 2) + "┘", style="dim white")
+        text.append("└" + "─" * (dim * CELL_WIDTH) + "┘", style="dim white")
         return text
 
     def update_piece(self, piece):
@@ -293,6 +315,60 @@ class ScoreWidget(Static):
             self.query_one("#lines-value", Label).update(f"LINES {lines}")
 
 
+class HelpScreen(ModalScreen[None]):
+    """Compact controls modal shown from the footer help action."""
+
+    CSS = """
+    HelpScreen {
+        align: center middle;
+        background: #060a12 70%;
+    }
+
+    #help-dialog {
+        width: 42;
+        height: auto;
+        padding: 1 2;
+        background: #16202b;
+        border: round #7dd3fc;
+    }
+
+    #help-title {
+        text-align: center;
+        text-style: bold;
+        color: #f8fafc;
+        margin-bottom: 1;
+    }
+
+    .help-line {
+        color: #dbeafe;
+        margin-bottom: 1;
+    }
+
+    #help-close {
+        text-align: center;
+        color: #7dd3fc;
+        margin-top: 1;
+    }
+    """
+
+    BINDINGS = [("escape,h,enter,space", "dismiss", "Close help")]
+
+    def compose(self) -> ComposeResult:
+        with Container(id="help-dialog"):
+            yield Label("HELP", id="help-title")
+            yield Label("↑ / W   Rotate", classes="help-line")
+            yield Label("← / A   Move left", classes="help-line")
+            yield Label("→ / D   Move right", classes="help-line")
+            yield Label("↓ / S   Soft drop", classes="help-line")
+            yield Label("Space   Hard drop", classes="help-line")
+            yield Label("R       Restart after game over", classes="help-line")
+            yield Label("Ctrl+Q  Quit", classes="help-line")
+            yield Label("Esc / H to close", id="help-close")
+
+    def action_dismiss(self) -> None:
+        self.dismiss(None)
+
+
 class TetrisApp(App):
     """Main Tetris application"""
 
@@ -305,6 +381,7 @@ class TetrisApp(App):
     )
 
     OTHER_BINDINGS = (
+        ("h", "help", "Help"),
         ("ctrl+q", "quit", "Quit"),
         ("r", "restart", "Restart"),
         ("ctrl+s", "screenshot", "Screenshot"),
@@ -326,58 +403,76 @@ class TetrisApp(App):
 
     CSS = """
     Screen {
-        background: $background;
+        layout: vertical;
+        background: #111927;
     }
 
     #game-container {
         width: 100%;
-        height: 100%;
-        background: $surface;
-        border: heavy $primary;
-        padding: 1;
+        height: 1fr;
+        align: center middle;
+        background: #111927;
+        padding: 1 2;
+    }
+
+    #playfield {
+        width: auto;
+        height: auto;
+        align: center middle;
     }
 
     #board-container {
-        width: 30;
-        margin: 1;
+        width: __BOARD_CONTAINER_WIDTH__;
+        height: auto;
+        margin: 0 1 0 0;
         padding: 1;
-        background: $panel;
-        border: solid $accent;
+        background: #22303d;
+        border: round #f4f1de;
         layers: base overlay;
+        content-align: center top;
+    }
+
+    #board {
+        width: auto;
+        height: auto;
     }
 
     #board-display {
-        margin: 1;
-        padding: 1;
+        margin: 0;
+        padding: 0;
         layer: base;
     }
 
     #sidebar {
-        width: 20;
-        margin-left: 2;
-        padding: 1;
+        width: __SIDEBAR_WIDTH__;
+        height: auto;
+        padding: 0;
+        align-vertical: top;
     }
 
     #next-piece-container {
-        margin-bottom: 2;
+        width: __NEXT_CONTAINER_WIDTH__;
+        height: auto;
+        margin-bottom: 1;
         padding: 1;
-        background: $panel;
-        border: solid $accent;
+        background: #1a2430;
+        border: round #5bc0eb;
     }
 
     #score-container {
-        height: 9;
+        width: __SIDEBAR_WIDTH__;
+        height: auto;
         padding: 1;
-        background: $panel;
-        border: solid $accent;
+        background: #1a2430;
+        border: round #5bc0eb;
     }
 
     #game-over-overlay {
         layer: overlay;
         content-align: center middle;
         text-style: bold;
-        color: $error;
-        background: $background 90%;
+        color: #f8fafc;
+        background: #070c14 82%;
         display: none;
     }
 
@@ -388,37 +483,27 @@ class TetrisApp(App):
     .section-title {
         text-align: center;
         text-style: bold;
-        color: $accent;
+        color: #7dd3fc;
     }
 
     .score-number {
         text-align: center;
         text-style: bold;
-        color: $warning;
+        color: #f8fafc;
         margin-bottom: 1;
         content-align: center middle;
     }
 
-    #controls {
-        margin-top: 2;
-        padding: 1;
-        background: $panel;
-        border: solid $accent;
-        height: 12;
+    Footer {
+        dock: bottom;
     }
-
-    #title {
-        text-align: center;
-        text-style: bold;
-        color: $primary;
-        margin-bottom: 1;
-    }
-    """
+    """.replace("__BOARD_CONTAINER_WIDTH__", str(BOARD_CONTAINER_WIDTH)).replace(
+        "__SIDEBAR_WIDTH__", str(SIDEBAR_WIDTH)
+    ).replace("__NEXT_CONTAINER_WIDTH__", str(NEXT_CONTAINER_WIDTH))
 
     def compose(self) -> ComposeResult:
         with Container(id="game-container"):
-            yield Label("🎮 TETRIS 🕹", id="title")
-            with Horizontal():
+            with Horizontal(id="playfield"):
                 with Container(id="board-container"):
                     yield TetrisBoard(id="board")
                     yield Static("GAME OVER\nPress R to restart", id="game-over-overlay")
@@ -427,14 +512,7 @@ class TetrisApp(App):
                         yield NextPieceWidget(id="next-piece")
                     with Container(id="score-container"):
                         yield ScoreWidget(id="score-widget")
-                    with Container(id="controls"):
-                        yield Label("CONTROLS", classes="section-title")
-                        yield Label("↑/W: Rotate")
-                        yield Label("←/A: Move Left")
-                        yield Label("→/D: Move Right")
-                        yield Label("↓/S: Move Down")
-                        yield Label("Space: Drop")
-                        yield Label("Ctrl+Q: Quit")
+        yield Footer()
 
     def on_mount(self):
         """Initialize the game"""
@@ -458,7 +536,6 @@ class TetrisApp(App):
 
         # Queue and show the following piece
         self._queue_new_piece()
-        self._refresh_score_widget()
         self._refresh_score_widget()
 
     def start_game_timer(self):
@@ -559,6 +636,10 @@ class TetrisApp(App):
         if self.game_over:
             # Relaunch the current Python process with same args for a clean state.
             os.execl(sys.executable, sys.executable, *sys.argv)
+
+    def action_help(self):
+        """Show the help modal from the footer toolbar."""
+        self.push_screen(HelpScreen())
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         """Disable live controls when the game has ended."""

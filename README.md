@@ -14,7 +14,7 @@ Blog post: https://mgaitan.github.io/en/posts/textual-tetris/
 
 ## The mandatory screenshot 
 
-![](screenshot.svg)
+![](screenshot.png)
 
 
 
