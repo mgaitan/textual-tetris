@@ -28,7 +28,8 @@ PIECES = {
 CELL_WIDTH = 4
 CELL_FILL = "█" * CELL_WIDTH
 CELL_EMPTY = " " * CELL_WIDTH
-BOARD_CONTAINER_WIDTH = 46
+BOARD_RENDER_WIDTH = 10 * CELL_WIDTH + 2
+BOARD_CONTAINER_WIDTH = BOARD_RENDER_WIDTH + 2
 MAX_PREVIEW_DIM = 4
 PREVIEW_RENDER_WIDTH = MAX_PREVIEW_DIM * CELL_WIDTH + 2
 NEXT_CONTAINER_WIDTH = PREVIEW_RENDER_WIDTH + 4
@@ -432,7 +433,6 @@ class TetrisApp(App):
         margin: 0 1 0 0;
         padding: 1;
         background: #22303d;
-        border: round #f4f1de;
         layers: base overlay;
         content-align: center top;
     }
