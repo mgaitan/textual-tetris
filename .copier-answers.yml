@@ -1,0 +1,15 @@
+# Changes here will be overwritten by Copier.
+_commit: 29932c707177fa2cbe8f3898af6839608d238898
+_src_path: https://github.com/mgaitan/python-package-copier-template
+author_email: gaitan@gmail.com
+author_fullname: Martín Gaitán
+author_username: mgaitan
+copyright_license: BSD-3-Clause
+gh_repo_create: skip
+project_description: A Tetris game for your terminal, built with the Textual framework.
+project_name: Textual Tetris
+python_package_command_line_name: textual-tetris
+python_package_distribution_name: textual-tetris
+python_package_import_name: textris
+repository_name: textual-tetris
+repository_namespace: mgaitan
