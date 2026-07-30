@@ -9,12 +9,24 @@ The easiest way is using `uvx` (part of [uv](https://docs.astral.sh/uv/)):
 uvx textual-tetris
 ```
 
+For local multiplayer:
+
+```bash
+uvx textual-tetris --2players
+```
+
 Blog post: https://mgaitan.github.io/en/posts/textual-tetris/
 
 
-## The mandatory screenshot 
+## Screenshots
+
+### Single-player
 
 ![](screenshot.png)
+
+### Two-player
+
+![](screenshot-2players.png)
 
 
 
@@ -24,12 +36,14 @@ Blog post: https://mgaitan.github.io/en/posts/textual-tetris/
 - The `Next` widget previews the upcoming piece so you can plan ahead, and the score widget keeps score/level/lines visible at all times.
 
 ### Controls
+In the default one-player mode, use arrows or `W/A/S/D` to move and rotate, and `Space` or `Q` to hard drop.
+
+With `--2players`:
 | Key | Action |
 | --- | --- |
-| `← / A` | Move left |
-| `→ / D` | Move right |
-| `↓ / S` | Soft drop |
-| `↑ / W` | Rotate |
-| `Space` | Hard drop |
+| `A / D / S / W` (Player 1) | Move left/right, soft drop, rotate |
+| `Q` (Player 1) | Hard drop |
+| `← / → / ↓ / ↑` (Player 2) | Move left/right, soft drop, rotate |
+| `Space` (Player 2) | Hard drop |
 | `Ctrl+Q` | Quit |
 | `R` | Restart after a game-over |
