@@ -1,8 +1,10 @@
+import argparse
 import contextlib
 import os
 import random
 import sys
 from collections import deque
+from dataclasses import dataclass, field
 from typing import ClassVar, cast
 
 from rich.text import Text
@@ -15,7 +17,7 @@ from textual.widgets import Footer, Label, Static
 
 # Compact hex-based shape definitions (4x4 grid)
 PIECES = {
-    # Keep the familiar Guideline hue families, but use explicit tones that stay
+    # Keep the classic Guideline hue families, but use explicit tones that stay
     # distinct across terminal themes.
     "O": {"color": "#FFD23F", "codes": ["56a9", "6a95", "a956", "956a"]},
     "I": {"color": "#49C6E5", "codes": ["4567", "26ae", "ba98", "d951"]},
@@ -31,9 +33,11 @@ CELL_FILL = "█" * CELL_WIDTH
 CELL_EMPTY = " " * CELL_WIDTH
 BOARD_RENDER_WIDTH = 10 * CELL_WIDTH + 2
 BOARD_CONTAINER_WIDTH = BOARD_RENDER_WIDTH + 2
+BOARD_WIDGET_WIDTH = BOARD_RENDER_WIDTH + 4
 MAX_PREVIEW_DIM = 4
 PREVIEW_RENDER_WIDTH = MAX_PREVIEW_DIM * CELL_WIDTH + 2
 NEXT_CONTAINER_WIDTH = PREVIEW_RENDER_WIDTH + 4
+PANEL_WIDGET_WIDTH = NEXT_CONTAINER_WIDTH
 SIDEBAR_WIDTH = NEXT_CONTAINER_WIDTH
 
 
@@ -89,8 +93,9 @@ class TetrisPiece:
 class TetrisBoard(Static):
     """The main game board widget"""
 
-    def __init__(self, width=10, height=20, **kwargs):
+    def __init__(self, player_id: int, width: int = 10, height: int = 20, **kwargs) -> None:
         super().__init__(**kwargs)
+        self.player_id = player_id
         self.board_width = width
         self.board_height = height
         self.board = [[0 for _ in range(width)] for _ in range(height)]
@@ -99,7 +104,7 @@ class TetrisBoard(Static):
     def compose(self) -> ComposeResult:
         yield Static(self.render_board(), id="board-display")
 
-    def on_mount(self):
+    def on_mount(self) -> None:
         """Called when the widget is mounted"""
         self.update_display()
 
@@ -137,12 +142,12 @@ class TetrisBoard(Static):
 
         return text
 
-    def update_display(self):
+    def update_display(self) -> None:
         """Update the board display"""
         board_display = self.query_one("#board-display", Static)
         board_display.update(self.render_board())
 
-    def move_piece(self, dx, dy):
+    def move_piece(self, dx: int, dy: int) -> bool:
         """Move the current piece"""
         if not self.current_piece:
             return False
@@ -191,12 +196,12 @@ class TetrisBoard(Static):
         # Notify app about scoring/level updates.
         # NOTE: If this raises (e.g., during shutdown), allow the error rather than hiding it.
         app = cast("TetrisApp", self.app)
-        app.on_piece_locked(cleared)
+        app.on_piece_locked(self.player_id, cleared)
 
         # Spawn a new piece
-        app.spawn_next_piece()
+        app.spawn_next_piece(self.player_id)
 
-    def _clear_full_lines(self):
+    def _clear_full_lines(self) -> int:
         """Remove filled rows and collapse the board."""
         new_rows = [row for row in self.board if not all(row)]
         cleared = self.board_height - len(new_rows)
@@ -207,7 +212,7 @@ class TetrisBoard(Static):
             self.board = new_rows
         return cleared
 
-    def rotate_piece(self):
+    def rotate_piece(self) -> bool:
         """Rotate the current piece"""
         if not self.current_piece:
             return False
@@ -225,7 +230,7 @@ class TetrisBoard(Static):
 class NextPieceWidget(Static):
     """Widget to show the next piece"""
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.next_piece = TetrisPiece()
 
@@ -288,7 +293,7 @@ class NextPieceWidget(Static):
         text.append("└" + "─" * content_width + "┘", style="dim white")
         return text
 
-    def update_piece(self, piece):
+    def update_piece(self, piece: TetrisPiece) -> None:
         """Update the next piece"""
         self.next_piece = piece
         next_display = self.query_one("#next-piece-display", Static)
@@ -302,25 +307,65 @@ class ScoreWidget(Static):
     level = reactive(1)
     lines = reactive(0)
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-
     def compose(self) -> ComposeResult:
         yield Label(f"SCORE {self.score}", id="score-value", classes="section-title")
         yield Label(f"LEVEL {self.level}", id="level-value", classes="score-number")
         yield Label(f"LINES {self.lines}", id="lines-value", classes="section-title")
 
-    def watch_score(self, score: int):
+    def watch_score(self, score: int) -> None:
         with contextlib.suppress(NoMatches):
             self.query_one("#score-value", Label).update(f"SCORE {score}")
 
-    def watch_level(self, level: int):
+    def watch_level(self, level: int) -> None:
         with contextlib.suppress(NoMatches):
             self.query_one("#level-value", Label).update(f"LEVEL {level}")
 
-    def watch_lines(self, lines: int):
+    def watch_lines(self, lines: int) -> None:
         with contextlib.suppress(NoMatches):
             self.query_one("#lines-value", Label).update(f"LINES {lines}")
+
+
+@dataclass
+class PlayerState:
+    """The independent game state for one local player."""
+
+    next_piece: TetrisPiece = field(default_factory=TetrisPiece)
+    score: int = 0
+    level: int = 1
+    lines_cleared: int = 0
+    drop_interval: float = 1.0
+    game_over: bool = False
+
+
+@dataclass
+class PlayerView:
+    """The mounted widgets used to render one player's game state."""
+
+    board_widget: TetrisBoard
+    next_widget: NextPieceWidget
+    score_widget: ScoreWidget
+    container: Container
+    overlay_widget: Static
+
+
+class PlayerPane(Container):
+    """Reusable split-screen pane with board, next piece, and score widgets."""
+
+    def __init__(self, player_id: int, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.player_id = player_id
+        self.board_widget = TetrisBoard(player_id, classes="player-board")
+        self.next_widget = NextPieceWidget(classes="player-panel next-widget")
+        self.score_widget = ScoreWidget(classes="player-panel score-widget")
+        self.overlay_widget = Static("GAME OVER\nPress R to restart", classes="game-over-overlay")
+
+    def compose(self) -> ComposeResult:
+        with Horizontal(classes="player-layout"):
+            yield self.board_widget
+            with Vertical(classes="player-sidebar"):
+                yield self.next_widget
+                yield self.score_widget
+        yield self.overlay_widget
 
 
 class HelpScreen(ModalScreen[None]):
@@ -361,16 +406,21 @@ class HelpScreen(ModalScreen[None]):
 
     BINDINGS: ClassVar = (("escape,h,enter,space", "close_help", "Close help"),)
 
+    def __init__(self, two_players: bool) -> None:
+        super().__init__()
+        self.two_players = two_players
+
     def compose(self) -> ComposeResult:
         with Container(id="help-dialog"):
             yield Label("HELP", id="help-title")
-            yield Label("↑ / W   Rotate", classes="help-line")
-            yield Label("← / A   Move left", classes="help-line")
-            yield Label("→ / D   Move right", classes="help-line")
-            yield Label("↓ / S   Soft drop", classes="help-line")
-            yield Label("Space   Hard drop", classes="help-line")
-            yield Label("R       Restart after game over", classes="help-line")
-            yield Label("Ctrl+Q  Quit", classes="help-line")
+            if self.two_players:
+                yield Label("P1: W/A/S/D move & rotate, Q drops", classes="help-line")
+                yield Label("P2: arrows move & rotate, Space drops", classes="help-line")
+            else:
+                yield Label("Arrows or W/A/S/D: move & rotate", classes="help-line")
+                yield Label("Space: hard drop", classes="help-line")
+            yield Label("R: restart after game over", classes="help-line")
+            yield Label("Ctrl+Q: quit", classes="help-line")
             yield Label("Esc / H to close", id="help-close")
 
     def action_close_help(self) -> None:
@@ -380,12 +430,26 @@ class HelpScreen(ModalScreen[None]):
 class TetrisApp(App):
     """Main Tetris application"""
 
-    LIVE_BINDINGS = (
-        ("left,a", "move_left", "Move Left"),
-        ("right,d", "move_right", "Move Right"),
-        ("down,s", "move_down", "Move Down"),
-        ("up,w", "rotate", "Rotate"),
-        ("space", "hard_drop", "Drop"),
+    SINGLE_PLAYER_BINDINGS = (
+        ("left,a", "player_one_left", "Move Left"),
+        ("right,d", "player_one_right", "Move Right"),
+        ("down,s", "player_one_down", "Move Down"),
+        ("up,w", "player_one_rotate", "Rotate"),
+        ("space,q", "player_one_hard_drop", "Drop"),
+    )
+    PLAYER_ONE_BINDINGS = (
+        ("a", "player_one_left", "P1 Left"),
+        ("d", "player_one_right", "P1 Right"),
+        ("s", "player_one_down", "P1 Down"),
+        ("w", "player_one_rotate", "P1 Rotate"),
+        ("q", "player_one_hard_drop", "P1 Drop"),
+    )
+    PLAYER_TWO_BINDINGS = (
+        ("left", "player_two_left", "P2 Left"),
+        ("right", "player_two_right", "P2 Right"),
+        ("down", "player_two_down", "P2 Down"),
+        ("up", "player_two_rotate", "P2 Rotate"),
+        ("space", "player_two_hard_drop", "P2 Drop"),
     )
 
     OTHER_BINDINGS = (
@@ -395,19 +459,22 @@ class TetrisApp(App):
         ("ctrl+s", "screenshot", "Screenshot"),
     )
 
-    BINDINGS = LIVE_BINDINGS + OTHER_BINDINGS
-    LIVE_ACTIONS = tuple(binding[1] for binding in LIVE_BINDINGS)
+    BINDINGS: ClassVar = OTHER_BINDINGS
+    LIVE_ACTIONS: ClassVar = tuple(
+        binding[1] for binding in SINGLE_PLAYER_BINDINGS + PLAYER_ONE_BINDINGS + PLAYER_TWO_BINDINGS
+    )
 
-    def __init__(self, **kwargs):
+    def __init__(self, two_players: bool = False, **kwargs) -> None:
         super().__init__(**kwargs)
-        self.game_timer = None
-        self.drop_interval = 1.0
-        self.score = 0
-        self.level = 1
-        self.lines_cleared = 0
+        self.two_players = two_players
+        self.game_timers = {}
         self.lines_per_level = 10
-        self.next_piece = TetrisPiece()
-        self.game_over = False
+        self.players = {player_id: PlayerState() for player_id in ((1, 2) if two_players else (1,))}
+        for keys, action, description in self.PLAYER_ONE_BINDINGS if two_players else self.SINGLE_PLAYER_BINDINGS:
+            self.bind(keys, action, description=description)
+        if two_players:
+            for keys, action, description in self.PLAYER_TWO_BINDINGS:
+                self.bind(keys, action, description=description)
 
     CSS = (
         """
@@ -476,6 +543,61 @@ class TetrisApp(App):
         border: round #5bc0eb;
     }
 
+    .player-pane {
+        width: auto;
+        height: auto;
+        margin: 0 1;
+        layers: base overlay;
+    }
+
+    .player-layout {
+        width: auto;
+        height: auto;
+    }
+
+    .player-board {
+        width: __BOARD_WIDGET_WIDTH__;
+        height: auto;
+        padding: 1;
+        background: #22303d;
+        border: round #f4f1de;
+    }
+
+    .player-panel {
+        width: __PANEL_WIDGET_WIDTH__;
+        height: auto;
+        padding: 1;
+        background: #1a2430;
+        border: round #5bc0eb;
+    }
+
+    .player-sidebar {
+        width: __PANEL_WIDGET_WIDTH__;
+        height: auto;
+        padding: 0;
+        align-vertical: top;
+        margin-left: 1;
+    }
+
+    .next-widget {
+        margin-bottom: 1;
+    }
+
+    .player-board #board-display {
+        margin: 0;
+        padding: 0;
+        layer: base;
+    }
+
+    .game-over-overlay {
+        layer: overlay;
+        content-align: center middle;
+        text-style: bold;
+        color: #f8fafc;
+        background: #070c14 82%;
+        display: none;
+    }
+
     #game-over-overlay {
         layer: overlay;
         content-align: center middle;
@@ -483,6 +605,10 @@ class TetrisApp(App):
         color: #f8fafc;
         background: #070c14 82%;
         display: none;
+    }
+
+    .game-over .game-over-overlay {
+        display: block;
     }
 
     .game-over #game-over-overlay {
@@ -509,154 +635,223 @@ class TetrisApp(App):
     """.replace("__BOARD_CONTAINER_WIDTH__", str(BOARD_CONTAINER_WIDTH))
         .replace("__SIDEBAR_WIDTH__", str(SIDEBAR_WIDTH))
         .replace("__NEXT_CONTAINER_WIDTH__", str(NEXT_CONTAINER_WIDTH))
+        .replace("__BOARD_WIDGET_WIDTH__", str(BOARD_WIDGET_WIDTH))
+        .replace("__PANEL_WIDGET_WIDTH__", str(PANEL_WIDGET_WIDTH))
     )
 
     def compose(self) -> ComposeResult:
         with Container(id="game-container"), Horizontal(id="playfield"):
-            with Container(id="board-container"):
-                yield TetrisBoard(id="board")
-                yield Static("GAME OVER\nPress R to restart", id="game-over-overlay")
-            with Vertical(id="sidebar"):
-                with Container(id="next-piece-container"):
-                    yield NextPieceWidget(id="next-piece")
-                with Container(id="score-container"):
-                    yield ScoreWidget(id="score-widget")
+            if self.two_players:
+                yield PlayerPane(1, id="player-one", classes="player-pane")
+                yield PlayerPane(2, id="player-two", classes="player-pane")
+            else:
+                with Container(id="board-container"):
+                    yield TetrisBoard(1, id="board")
+                    yield Static("GAME OVER\nPress R to restart", id="game-over-overlay")
+                with Vertical(id="sidebar"):
+                    with Container(id="next-piece-container"):
+                        yield NextPieceWidget(id="next-piece")
+                    with Container(id="score-container"):
+                        yield ScoreWidget(id="score-widget")
         yield Footer()
 
     def on_mount(self):
         """Initialize the game"""
-        self.board = self.query_one("#board", TetrisBoard)
-        self.next_piece_widget = self.query_one("#next-piece", NextPieceWidget)
-        self.score_widget = self.query_one("#score-widget", ScoreWidget)
-        self.board_container = self.query_one("#board-container")
-        self.game_over_overlay = self.query_one("#game-over-overlay", Static)
+        if self.two_players:
+            first_player = self.query_one("#player-one", PlayerPane)
+            second_player = self.query_one("#player-two", PlayerPane)
+            self.player_panes = {
+                1: PlayerView(
+                    first_player.board_widget,
+                    first_player.next_widget,
+                    first_player.score_widget,
+                    first_player,
+                    first_player.overlay_widget,
+                ),
+                2: PlayerView(
+                    second_player.board_widget,
+                    second_player.next_widget,
+                    second_player.score_widget,
+                    second_player,
+                    second_player.overlay_widget,
+                ),
+            }
+        else:
+            board_container = self.query_one("#board-container", Container)
+            self.player_panes = {
+                1: PlayerView(
+                    self.query_one("#board", TetrisBoard),
+                    self.query_one("#next-piece", NextPieceWidget),
+                    self.query_one("#score-widget", ScoreWidget),
+                    board_container,
+                    self.query_one("#game-over-overlay", Static),
+                )
+            }
 
         # Give widgets time to mount, then update displays
         self.call_after_refresh(self._update_all_displays)
 
-        # Start the game timer for automatic piece dropping
-        self.start_game_timer()
+        # Start an independent drop timer for each active player.
+        for player_id in self.players:
+            self.start_game_timer(player_id)
 
     def _update_all_displays(self):
         """Update all game displays after widgets are mounted"""
-        # Ensure the board starts with the queued next piece
-        self.board.current_piece = self.next_piece
-        self.board.update_display()
+        for player_id in self.players:
+            self.spawn_next_piece(player_id)
+            self._refresh_score_widget(player_id)
 
-        # Queue and show the following piece
-        self._queue_new_piece()
-        self._refresh_score_widget()
+    def start_game_timer(self, player_id: int) -> None:
+        """Start or reset one player's automatic piece-dropping timer."""
+        if timer := self.game_timers.get(player_id):
+            timer.pause()
+        state = self.players[player_id]
+        self.game_timers[player_id] = self.set_interval(state.drop_interval, lambda: self.auto_drop(player_id))
+        if state.game_over:
+            self.game_timers[player_id].pause()
 
-    def start_game_timer(self):
-        """Start the automatic piece dropping timer"""
-        if self.game_timer:
-            self.game_timer.pause()
-        self.game_timer = self.set_interval(self.drop_interval, self.auto_drop)
-        if self.game_over and self.game_timer:
-            self.game_timer.pause()
+    def auto_drop(self, player_id: int) -> None:
+        """Automatically drop one active player's piece."""
+        state = self.players[player_id]
+        if not state.game_over:
+            self.player_panes[player_id].board_widget.move_piece(0, 1)
 
-    def auto_drop(self):
-        """Automatically drop the current piece"""
-        if not self.game_over:
-            # move_piece will lock the piece if it can't go lower
-            self.board.move_piece(0, 1)
+    def _move_piece(self, player_id: int, dx: int, dy: int) -> None:
+        if (state := self.players.get(player_id)) and not state.game_over:
+            self.player_panes[player_id].board_widget.move_piece(dx, dy)
 
-    def action_move_left(self):
-        self.board.move_piece(-1, 0)
+    def _rotate_piece(self, player_id: int) -> None:
+        if (state := self.players.get(player_id)) and not state.game_over:
+            self.player_panes[player_id].board_widget.rotate_piece()
 
-    def action_move_right(self):
-        self.board.move_piece(1, 0)
-
-    def action_move_down(self):
-        self.board.move_piece(0, 1)
-
-    def action_rotate(self):
-        self.board.rotate_piece()
-
-    def action_hard_drop(self):
+    def _hard_drop(self, player_id: int) -> None:
         """Instantly drop the piece to the lowest valid position."""
-        while self.board.move_piece(0, 1):
+        if player_id not in self.players:
+            return
+        board = self.player_panes[player_id].board_widget
+        while not self.players[player_id].game_over and board.move_piece(0, 1):
             pass
 
-    def on_piece_locked(self, cleared_lines: int):
+    def action_player_one_left(self) -> None:
+        self._move_piece(1, -1, 0)
+
+    def action_player_one_right(self) -> None:
+        self._move_piece(1, 1, 0)
+
+    def action_player_one_down(self) -> None:
+        self._move_piece(1, 0, 1)
+
+    def action_player_one_rotate(self) -> None:
+        self._rotate_piece(1)
+
+    def action_player_one_hard_drop(self) -> None:
+        self._hard_drop(1)
+
+    def action_player_two_left(self) -> None:
+        self._move_piece(2, -1, 0)
+
+    def action_player_two_right(self) -> None:
+        self._move_piece(2, 1, 0)
+
+    def action_player_two_down(self) -> None:
+        self._move_piece(2, 0, 1)
+
+    def action_player_two_rotate(self) -> None:
+        self._rotate_piece(2)
+
+    def action_player_two_hard_drop(self) -> None:
+        self._hard_drop(2)
+
+    def on_piece_locked(self, player_id: int, cleared_lines: int) -> None:
         """Update score/level/timing after a piece locks."""
+        state = self.players[player_id]
         if cleared_lines:
             # Classic scoring scale per number of lines cleared at once
             line_score = {1: 100, 2: 300, 3: 500, 4: 800}.get(cleared_lines, cleared_lines * 200)
-            self.score += line_score * self.level
-            self.lines_cleared += cleared_lines
+            state.score += line_score * state.level
+            state.lines_cleared += cleared_lines
         else:
             # Small reward just for locking a piece
-            self.score += 10
+            state.score += 10
 
         # Level up every N cleared lines
-        new_level = max(1, 1 + self.lines_cleared // self.lines_per_level)
-        if new_level != self.level:
-            self.level = new_level
-            # Speed up drop interval; clamp to a reasonable minimum
-            self.drop_interval = self._drop_interval_for_level(self.level)
-            self.start_game_timer()
+        new_level = max(1, 1 + state.lines_cleared // self.lines_per_level)
+        if new_level != state.level:
+            state.level = new_level
+            state.drop_interval = self._drop_interval_for_level(state.level)
+            self.start_game_timer(player_id)
 
-        self._refresh_score_widget()
+        self._refresh_score_widget(player_id)
 
-    def spawn_next_piece(self):
+    def spawn_next_piece(self, player_id: int) -> None:
         """Move queued next piece to the board and queue another."""
-        if self.game_over:
+        state = self.players[player_id]
+        if state.game_over:
             return
-        self.board.current_piece = self.next_piece
-        if self.board.check_collision():
-            self._handle_game_over()
+        board = self.player_panes[player_id].board_widget
+        board.current_piece = state.next_piece
+        if board.check_collision():
+            self._handle_game_over(player_id)
             return
-        self.board.update_display()
-        self._queue_new_piece()
+        board.update_display()
+        self._queue_new_piece(player_id)
 
-    def _queue_new_piece(self):
+    def _queue_new_piece(self, player_id: int) -> None:
         """Create the next piece and update the preview widget."""
-        self.next_piece = TetrisPiece()
-        self.next_piece_widget.update_piece(self.next_piece)
+        state = self.players[player_id]
+        state.next_piece = TetrisPiece()
+        self.player_panes[player_id].next_widget.update_piece(state.next_piece)
 
-    def _refresh_score_widget(self):
+    def _refresh_score_widget(self, player_id: int) -> None:
         """Push current score state to the widget."""
-        score_widget = self.score_widget
-        score_widget.score = self.score
-        score_widget.level = self.level
-        score_widget.lines = self.lines_cleared
+        state = self.players[player_id]
+        score_widget = self.player_panes[player_id].score_widget
+        score_widget.score = state.score
+        score_widget.level = state.level
+        score_widget.lines = state.lines_cleared
 
     @staticmethod
     def _drop_interval_for_level(level: int) -> float:
-        """Return the official Tetris guideline drop speed for the given level."""
+        """Return the Tetris guideline drop speed for a level."""
         exponent = level - 1
-        base = 0.8 - exponent * 0.007
-        # Clamp base to avoid negative intervals at high levels
-        base = max(base, 0.001)
+        base = max(0.8 - exponent * 0.007, 0.001)
         return max(0.02, base**exponent)
 
-    def _handle_game_over(self):
+    def _handle_game_over(self, player_id: int) -> None:
         """Show game over UI and stop input/timers."""
-        self.game_over = True
-        if self.game_timer:
-            self.game_timer.pause()
-        self.board_container.add_class("game-over")
-        self.game_over_overlay.display = True
+        self.players[player_id].game_over = True
+        player_view = self.player_panes[player_id]
+        player_view.container.add_class("game-over")
+        player_view.overlay_widget.display = True
+        if timer := self.game_timers.get(player_id):
+            timer.pause()
         self.refresh_bindings()
+
+    def _has_active_players(self) -> bool:
+        return any(not state.game_over for state in self.players.values())
 
     def action_restart(self):
         """Restart the whole process when game over."""
-        if self.game_over:
+        if any(state.game_over for state in self.players.values()):
             # Relaunch the current Python process with same args for a clean state.
             os.execl(sys.executable, sys.executable, *sys.argv)
 
     def action_help(self):
         """Show the help modal from the footer toolbar."""
-        self.push_screen(HelpScreen())
+        self.push_screen(HelpScreen(self.two_players))
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         """Disable live controls when the game has ended."""
         # ref: https://textual.textualize.io/guide/actions/#dynamic-actions
-        if not (self.game_over and action in self.LIVE_ACTIONS):
+        if not (not self._has_active_players() and action in self.LIVE_ACTIONS):
             return True
 
 
-def main():
-    app = TetrisApp()
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Play Tetris in your terminal.")
+    parser.add_argument(
+        "-2p", "--2players", action="store_true", dest="two_players", help="Enable local two-player mode."
+    )
+    args = parser.parse_args()
+    app = TetrisApp(two_players=args.two_players)
     app.run()
