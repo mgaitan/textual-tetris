@@ -2,7 +2,15 @@ import asyncio
 
 from textual.containers import Container, Vertical
 
-from textris import BOARD_WIDGET_WIDTH, PANEL_WIDGET_WIDTH, PlayerPane, TetrisApp, TetrisPiece, coords_to_matrix
+from textris import (
+    BOARD_WIDGET_WIDTH,
+    LOCK_DELAY,
+    PANEL_WIDGET_WIDTH,
+    PlayerPane,
+    TetrisApp,
+    TetrisPiece,
+    coords_to_matrix,
+)
 
 
 def test_piece_preview_matrix_uses_its_bounding_box() -> None:
@@ -66,5 +74,31 @@ def test_single_player_mode_mounts_one_board() -> None:
             assert app.query_one("#next-piece-container", Container)
             assert app.query_one("#score-container", Container)
             assert not app.query(PlayerPane)
+
+    asyncio.run(run())
+
+
+def test_hard_drop_allows_a_grounded_piece_to_be_adjusted_before_locking() -> None:
+    async def run() -> None:
+        app = TetrisApp()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            board = app.player_panes[1].board_widget
+            piece = board.current_piece
+
+            assert piece is not None
+            await pilot.press("space")
+            assert board.current_piece is piece
+            assert board.is_grounded()
+
+            x = piece.x
+            await pilot.press("left")
+            assert piece.x == x - 1
+
+            await pilot.pause(LOCK_DELAY / 2)
+            assert board.current_piece is piece
+
+            await pilot.pause(LOCK_DELAY)
+            assert board.current_piece is not piece
 
     asyncio.run(run())

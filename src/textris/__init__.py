@@ -13,6 +13,7 @@ from textual.containers import Container, Horizontal, Vertical
 from textual.css.query import NoMatches
 from textual.reactive import reactive
 from textual.screen import ModalScreen
+from textual.timer import Timer
 from textual.widgets import Footer, Label, Static
 
 # Compact hex-based shape definitions (4x4 grid)
@@ -39,6 +40,7 @@ PREVIEW_RENDER_WIDTH = MAX_PREVIEW_DIM * CELL_WIDTH + 2
 NEXT_CONTAINER_WIDTH = PREVIEW_RENDER_WIDTH + 4
 PANEL_WIDGET_WIDTH = NEXT_CONTAINER_WIDTH
 SIDEBAR_WIDTH = NEXT_CONTAINER_WIDTH
+LOCK_DELAY = 0.5
 
 
 def coords_to_matrix(coords):
@@ -100,6 +102,7 @@ class TetrisBoard(Static):
         self.board_height = height
         self.board = [[0 for _ in range(width)] for _ in range(height)]
         self.current_piece: TetrisPiece | None = None
+        self.lock_timer: Timer | None = None
 
     def compose(self) -> ComposeResult:
         yield Static(self.render_board(), id="board-display")
@@ -159,13 +162,45 @@ class TetrisBoard(Static):
         if self.check_collision():
             # Revert move
             self.current_piece.x, self.current_piece.y = old_x, old_y
-            # If we were moving down, lock the piece in place
+            # Let players adjust a grounded piece before locking it.
             if dy > 0:
-                self.lock_piece()
+                self.schedule_lock()
             return False
 
+        if dx:
+            self.reset_lock_delay()
         self.update_display()
         return True
+
+    def is_grounded(self) -> bool:
+        """Return whether the current piece can no longer move down."""
+        if not self.current_piece:
+            return False
+        self.current_piece.y += 1
+        grounded = self.check_collision()
+        self.current_piece.y -= 1
+        return grounded
+
+    def schedule_lock(self) -> None:
+        """Lock the current piece after a short adjustment window."""
+        if self.lock_timer or not (piece := self.current_piece):
+            return
+        self.lock_timer = self.set_timer(LOCK_DELAY, lambda: self.lock_if_current(piece))
+
+    def reset_lock_delay(self) -> None:
+        """Restart the lock delay after an adjustment on the ground."""
+        if not self.lock_timer:
+            return
+        self.lock_timer.stop()
+        self.lock_timer = None
+        if self.is_grounded():
+            self.schedule_lock()
+
+    def lock_if_current(self, piece: TetrisPiece) -> None:
+        """Lock `piece` only if it is still active and grounded."""
+        self.lock_timer = None
+        if self.current_piece is piece and self.is_grounded():
+            self.lock_piece()
 
     def check_collision(self):
         """Check if current piece collides with boundaries or other pieces"""
@@ -186,6 +221,9 @@ class TetrisBoard(Static):
         """Fix the current piece to the board and spawn a new one."""
         if not self.current_piece:
             return
+        if self.lock_timer:
+            self.lock_timer.stop()
+            self.lock_timer = None
         for board_x, board_y in self.current_piece.blocks:
             if 0 <= board_x < self.board_width and 0 <= board_y < self.board_height:
                 self.board[board_y][board_x] = self.current_piece.color
@@ -223,6 +261,7 @@ class TetrisBoard(Static):
             self.current_piece.undo_rotate()
             return False
 
+        self.reset_lock_delay()
         self.update_display()
         return True
 
