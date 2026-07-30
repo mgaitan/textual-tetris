@@ -1,12 +1,31 @@
-.PHONY: install
-install: ## Install the virtual environment and install the pre-commit hooks
-	@echo "🚀 Creating virtual environment using uv"
+.PHONY: install lint format type test qa bump release help
+
+export UV_MALWARE_CHECK := 1
+
+install: ## Install project dependencies with uv
 	@uv sync
+
+lint: ## Run Ruff checks on this repository
+	@uv run --group lint ruff check .
+
+format: ## Format code with Ruff
+	@uv run --group lint ruff format .
+
+type: ## Run ty checks on this repository
+	@uv run --group qa ty check
+
+test: ## Run repository tests
+	@uv run --group test pytest -q
+
+qa: lint type test ## Run local quality checks
+
+bump: ## Bump the project minor version
+	@uv version --bump minor
 
 .PHONY: release
 release: ## Create a GitHub release for the current version
 	@version=$$(uv version --short); \
-	git commit --allow-empty -m "Bump $$version"; \
+	git commit -am "Bump $$version"; \
 	git push origin main; \
 	gh release create "$$version" --generate-notes
 

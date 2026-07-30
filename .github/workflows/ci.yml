@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  UV_MALWARE_CHECK: "1"
+
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v8.2.0
+      - run: uv run --only-group lint ruff check --output-format=github
+      - run: uv run --only-group lint ruff format --check
+      - run: uv run --group qa ty check --output-format=github
+      - run: uv run --group test pytest
+      - run: uv build

@@ -3,6 +3,7 @@ import os
 import random
 import sys
 from collections import deque
+from typing import ClassVar, cast
 
 from rich.text import Text
 from textual.app import App, ComposeResult
@@ -60,7 +61,7 @@ class TetrisPiece:
         self.y = 0
 
     @property
-    def shape(self) -> list(tuple[int, int]):
+    def shape(self) -> list[tuple[int, int]]:
         """expand the Hex code into a list of (x, y) coords relative to a 4x4 grid"""
         coords = []
         for char in self.code:
@@ -189,10 +190,11 @@ class TetrisBoard(Static):
 
         # Notify app about scoring/level updates.
         # NOTE: If this raises (e.g., during shutdown), allow the error rather than hiding it.
-        self.app.on_piece_locked(cleared)
+        app = cast("TetrisApp", self.app)
+        app.on_piece_locked(cleared)
 
         # Spawn a new piece
-        self.app.spawn_next_piece()
+        app.spawn_next_piece()
 
     def _clear_full_lines(self):
         """Remove filled rows and collapse the board."""
@@ -357,7 +359,7 @@ class HelpScreen(ModalScreen[None]):
     }
     """
 
-    BINDINGS = [("escape,h,enter,space", "dismiss", "Close help")]
+    BINDINGS: ClassVar = (("escape,h,enter,space", "close_help", "Close help"),)
 
     def compose(self) -> ComposeResult:
         with Container(id="help-dialog"):
@@ -371,7 +373,7 @@ class HelpScreen(ModalScreen[None]):
             yield Label("Ctrl+Q  Quit", classes="help-line")
             yield Label("Esc / H to close", id="help-close")
 
-    def action_dismiss(self) -> None:
+    def action_close_help(self) -> None:
         self.dismiss(None)
 
 
