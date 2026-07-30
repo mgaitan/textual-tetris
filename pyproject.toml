@@ -22,14 +22,23 @@ classifiers = [
     "Topic :: Terminals",
     "Environment :: Console",
 ]
-dependencies = ["textual"]
+dependencies = [
+    "textual>=6.6.0",
+]
 
 [build-system]
-requires = ["flit_core >=3.8,<4"]
-build-backend = "flit_core.buildapi"
+requires = ["uv_build>=0.11.29,<0.12.0"]
+build-backend = "uv_build"
 
-[tool.flit.module]
-name = "textris"
+[tool.uv.build-backend]
+module-name = "textris"
+
+[tool.uv]
+exclude-newer = "1 week"
+exclude-newer-package = { ty = "0 days" }
+
+[tool.ty.src]
+exclude = [".worktrees/", ".external-worktrees/"]
 
 
 [tool.ruff]
@@ -55,9 +64,24 @@ select = [
     "TID252", # https://docs.astral.sh/ruff/rules/relative-imports/
 ]
 
+[tool.pytest.ini_options]
+addopts = ["--strict-markers", "--strict-config", "-ra"]
+
+[dependency-groups]
+lint = [
+    "ruff>=0.15.22",
+]
+qa = [
+    { include-group = "lint" },
+    "ty>=0.0.61",
+]
+test = [
+    "pytest>=9.1.1",
+]
+
 [project.urls]
-Repository = "https://github.com/mgaitan/textris"
-Issues = "https://github.com/mgaitan/textris/issues"
+Repository = "https://github.com/mgaitan/textual-tetris"
+Issues = "https://github.com/mgaitan/textual-tetris/issues"
 
 [project.scripts]
 textual-tetris = "textris:main"
