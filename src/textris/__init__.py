@@ -180,13 +180,13 @@ class TetrisBoard(Static):
         return grounded
 
     def schedule_lock(self) -> None:
-        """Lock the current piece after a short adjustment window."""
+        """Lock the current piece after a fixed, short adjustment window."""
         if self.lock_timer or not (piece := self.current_piece):
             return
         self.lock_timer = self.set_timer(LOCK_DELAY, lambda: self.lock_if_current(piece))
 
     def lock_if_current(self, piece: TetrisPiece) -> None:
-        """Lock `piece` only if it is still active and grounded."""
+        """Lock `piece` only if it is still grounded when the deadline expires."""
         self.lock_timer = None
         if self.current_piece is piece and self.is_grounded():
             self.lock_piece()
