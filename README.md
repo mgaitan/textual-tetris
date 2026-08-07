@@ -23,11 +23,18 @@ uvx textual-tetris --connect ws://HOST:8765
 ```
 
 The server controls the game state; the connecting player controls P2 with the arrow keys and Space.
-To play against the built-in minimal agent instead:
 
-```bash
-uvx textual-tetris --agent
+An automated player can use the same WebSocket without rendering the terminal UI. On connection, the server
+sends a `welcome` message describing the protocol, role, valid actions, and state format, followed by `state`
+snapshots. Send actions as JSON, for example:
+
+```json
+{"type": "input", "action": "left"}
 ```
+
+The `state.players["2"].board` value is a 20x10 matrix from top to bottom. The current piece includes its
+type, absolute `x`/`y` position, and rotation code. This is enough for an AI client to choose and send moves
+directly over the socket; no special agent mode or visual inspection is required.
 
 Blog post: https://mgaitan.github.io/en/posts/textual-tetris/
 

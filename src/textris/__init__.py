@@ -494,7 +494,8 @@ class TetrisApp(App):
     LIVE_ACTIONS: ClassVar = tuple(
         binding[1] for binding in SINGLE_PLAYER_BINDINGS + PLAYER_ONE_BINDINGS + PLAYER_TWO_BINDINGS
     )
-    NETWORK_ACTIONS: ClassVar = {"left", "right", "down", "rotate", "drop"}
+    NETWORK_PROTOCOL: ClassVar = "textual-tetris/v1"
+    NETWORK_ACTIONS: ClassVar = ("left", "right", "down", "rotate", "drop")
 
     def __init__(
         self,
@@ -506,7 +507,7 @@ class TetrisApp(App):
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
-        if network_mode not in {None, "server", "client", "agent"}:
+        if network_mode not in {None, "server", "client"}:
             raise ValueError(f"Unsupported network mode: {network_mode}")
         if network_mode == "client" and not connect_url:
             raise ValueError("A connect URL is required in client mode")
@@ -517,8 +518,6 @@ class TetrisApp(App):
         self.server_port = server_port
         self.two_players = two_players or network_mode is not None
         self.game_timers = {}
-        self.agent_timer: Timer | None = None
-        self.agent_step_count = 0
         self._network_client = None
         self._network_clients = set()
         self._network_tasks = set()
@@ -526,7 +525,7 @@ class TetrisApp(App):
         self.players = {player_id: PlayerState() for player_id in ((1, 2) if self.two_players else (1,))}
         if network_mode == "client":
             bindings = self.PLAYER_TWO_BINDINGS
-        elif network_mode in {"server", "agent"}:
+        elif network_mode == "server":
             bindings = self.PLAYER_ONE_BINDINGS
         else:
             bindings = self.PLAYER_ONE_BINDINGS if two_players else self.SINGLE_PLAYER_BINDINGS
@@ -759,9 +758,6 @@ class TetrisApp(App):
                     continue
                 self.start_game_timer(player_id)
 
-            if self.network_mode == "agent":
-                self.agent_timer = self.set_interval(0.75, self._agent_step)
-
         if self.network_mode == "server":
             self.run_worker(self._run_server())
         elif self.network_mode == "client":
@@ -802,6 +798,20 @@ class TetrisApp(App):
         if self.network_mode == "server" and self._network_clients:
             self._schedule_network_task(self._send_state())
 
+    def _welcome_payload(self) -> dict:
+        return {
+            "type": "welcome",
+            "protocol": self.NETWORK_PROTOCOL,
+            "role": "player2",
+            "actions": list(self.NETWORK_ACTIONS),
+            "input": {"type": "input", "action": "<action>"},
+            "state": {
+                "board": "20 rows of 10 cells, top to bottom; 0 means empty",
+                "current_piece": "type, x, y, and rotation code, or null",
+                "next_piece": "type, x, y, and rotation code",
+            },
+        }
+
     def _schedule_network_task(self, coroutine) -> None:
         task = asyncio.create_task(coroutine)
         self._network_tasks.add(task)
@@ -831,6 +841,7 @@ class TetrisApp(App):
         self.start_game_timer(2)
         self.notify("Remote player connected")
         try:
+            await websocket.send(json.dumps(self._welcome_payload()))
             await websocket.send(json.dumps(self._state_payload()))
             async for message in websocket:
                 try:
@@ -912,17 +923,6 @@ class TetrisApp(App):
             self._rotate_piece(2)
         elif action == "drop":
             self._hard_drop(2)
-
-    def _agent_step(self) -> None:
-        if self.players[2].game_over:
-            return
-        self.agent_step_count += 1
-        if self.agent_step_count % 5 == 0:
-            self._hard_drop(2)
-            return
-        if self.agent_step_count % 3 == 0:
-            self._rotate_piece(2)
-        self._move_piece(2, -1 if self.agent_step_count % 2 else 1, 0)
 
     def start_game_timer(self, player_id: int) -> None:
         """Start or reset one player's automatic piece-dropping timer."""
@@ -1099,11 +1099,10 @@ def main() -> None:
     network = parser.add_mutually_exclusive_group()
     network.add_argument("--server", action="store_true", help="Host a remote two-player game.")
     network.add_argument("--connect", metavar="URL", help="Connect to a remote game server.")
-    network.add_argument("--agent", action="store_true", help="Play against a simple local agent.")
     parser.add_argument("--host", default="0.0.0.0", help="Server bind host (default: 0.0.0.0).")
     parser.add_argument("--port", type=int, default=8765, help="Server port (default: 8765).")
     args = parser.parse_args()
-    network_mode = "server" if args.server else "client" if args.connect else "agent" if args.agent else None
+    network_mode = "server" if args.server else "client" if args.connect else None
     app = TetrisApp(
         two_players=args.two_players,
         network_mode=network_mode,

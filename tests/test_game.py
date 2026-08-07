@@ -106,23 +106,18 @@ def test_hard_drop_allows_a_grounded_piece_to_be_adjusted_before_locking() -> No
     asyncio.run(run())
 
 
-def test_agent_mode_mounts_two_players() -> None:
-    async def run() -> None:
-        app = TetrisApp(network_mode="agent")
-        async with app.run_test() as pilot:
-            await pilot.pause()
-            assert set(app.players) == {1, 2}
-            assert len(app.query(PlayerPane)) == 2
-
-    asyncio.run(run())
-
-
-def test_server_sends_state_and_accepts_remote_input() -> None:
+def test_server_describes_protocol_and_accepts_remote_input() -> None:
     async def run() -> None:
         app = TetrisApp(network_mode="server", server_port=0)
         async with app.run_test(size=(181, 59)) as pilot:
             await pilot.pause()
             async with connect(f"ws://127.0.0.1:{app.server_port}") as websocket:
+                welcome = json.loads(await websocket.recv())
+                assert welcome["type"] == "welcome"
+                assert welcome["protocol"] == "textual-tetris/v1"
+                assert welcome["role"] == "player2"
+                assert set(welcome["actions"]) == {"left", "right", "down", "rotate", "drop"}
+
                 initial = json.loads(await websocket.recv())
                 assert initial["type"] == "state"
                 assert set(initial["players"]) == {"1", "2"}
