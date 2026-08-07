@@ -1,6 +1,8 @@
 import asyncio
+import json
 
 from textual.containers import Container, Vertical
+from websockets.asyncio.client import connect
 
 from textris import (
     BOARD_WIDGET_WIDTH,
@@ -102,3 +104,90 @@ def test_hard_drop_allows_a_grounded_piece_to_be_adjusted_before_locking() -> No
             assert board.current_piece is not piece
 
     asyncio.run(run())
+
+
+def test_server_describes_protocol_and_accepts_remote_input() -> None:
+    async def run() -> None:
+        app = TetrisApp(network_mode="server", server_port=0)
+        async with app.run_test(size=(181, 59)) as pilot:
+            await pilot.pause()
+            assert not app.game_started
+            assert app.player_panes[1].board_widget.current_piece is None
+            assert app.player_panes[2].board_widget.current_piece is None
+            assert app.query_one("#game-container").has_class("waiting")
+            waiting_overlay = app.query_one("#waiting-overlay")
+            assert waiting_overlay.parent is app.query_one("#game-container", Container)
+            async with connect(f"ws://127.0.0.1:{app.server_port}") as websocket:
+                welcome = json.loads(await websocket.recv())
+                assert welcome["type"] == "welcome"
+                assert welcome["protocol"] == "textual-tetris/v1"
+                assert welcome["role"] == "player2"
+                assert set(welcome["actions"]) == {"left", "right", "down", "rotate", "drop"}
+                assert welcome["events"] == ["state", "piece_locked", "ack"]
+                assert set(welcome["pieces"]) == {"O", "I", "J", "L", "T", "Z", "S"}
+                assert len(welcome["pieces"]["T"]["rotations"]) == 4
+                assert welcome["pieces"]["T"]["rotations"][0]["blocks"]
+
+                initial = json.loads(await websocket.recv())
+                assert initial["type"] == "state"
+                assert isinstance(initial["revision"], int)
+                assert initial["status"] == "running"
+                assert set(initial["players"]) == {"1", "2"}
+                assert {"score", "level", "lines", "game_over"} <= set(initial["players"]["1"])
+                assert app.game_started
+                assert not app.query_one("#game-container").has_class("waiting")
+
+                piece = app.player_panes[2].board_widget.current_piece
+                assert piece is not None
+                initial_piece_id = piece.piece_id
+                assert initial["players"]["2"]["current_piece"]["piece_id"] == initial_piece_id
+                initial_x = piece.x
+                await websocket.send(json.dumps({"type": "input", "id": 1, "action": "left"}))
+                await pilot.pause()
+                updated = None
+                ack = None
+                deadline = asyncio.get_running_loop().time() + 2
+                while updated is None or ack is None:
+                    remaining = deadline - asyncio.get_running_loop().time()
+                    message = json.loads(await asyncio.wait_for(websocket.recv(), remaining))
+                    if message["type"] == "state" and message["revision"] > initial["revision"]:
+                        updated = message
+                    if message["type"] == "ack" and message["id"] == 1:
+                        ack = message
+                assert updated is not None
+                assert ack["type"] == "ack"
+                assert ack["accepted"] is True
+                assert ack["revision"] > updated["revision"]
+                piece = app.player_panes[2].board_widget.current_piece
+                assert piece is not None
+                assert piece.x == initial_x - 1
+
+                await websocket.send(json.dumps({"type": "input", "id": 2, "action": "drop"}))
+                deadline = asyncio.get_running_loop().time() + 2
+                while True:
+                    remaining = deadline - asyncio.get_running_loop().time()
+                    message = json.loads(await asyncio.wait_for(websocket.recv(), remaining))
+                    if message["type"] == "piece_locked" and message["player"] == 2:
+                        assert message["piece_id"] == initial_piece_id
+                        break
+
+                await websocket.send(json.dumps({"type": "input", "id": 3, "action": "unknown"}))
+                deadline = asyncio.get_running_loop().time() + 2
+                while True:
+                    remaining = deadline - asyncio.get_running_loop().time()
+                    message = json.loads(await asyncio.wait_for(websocket.recv(), remaining))
+                    if message["type"] == "ack" and message["id"] == 3:
+                        assert message["accepted"] is False
+                        break
+            await pilot.pause()
+            assert app.query_one("#game-container").has_class("waiting")
+
+    asyncio.run(run())
+
+
+def test_remote_modes_use_the_same_arrow_and_space_keys() -> None:
+    server_keys = {binding[0] for binding in TetrisApp.REMOTE_SERVER_BINDINGS}
+    client_keys = {binding[0] for binding in TetrisApp.REMOTE_CLIENT_BINDINGS}
+
+    assert server_keys == {"left", "right", "down", "up", "space"}
+    assert client_keys == server_keys
