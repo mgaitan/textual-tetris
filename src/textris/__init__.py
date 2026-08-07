@@ -874,9 +874,7 @@ class TetrisApp(App):
 
     def _send_input(self, action: str) -> None:
         if self._network_client:
-            self._schedule_network_task(
-                self._network_client.send(json.dumps({"type": "input", "action": action}))
-            )
+            self._schedule_network_task(self._network_client.send(json.dumps({"type": "input", "action": action})))
 
     @staticmethod
     def _piece_from_payload(payload: dict | None) -> TetrisPiece | None:
