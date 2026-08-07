@@ -20,17 +20,26 @@ uvx textual-tetris --2players
 
 ## Remote games
 
-Start a headless server, then connect two players:
+Start a server as local Player 1, then connect Player 2:
 
 ```bash
-uvx textual-tetris --server --port 8765
-uvx textual-tetris --connect ws://HOST:8765 --name Ada
-uvx textual-tetris --connect ws://HOST:8765 --name Grace
+uvx textual-tetris server --name Ada
+uvx textual-tetris connect ws://HOST:8765 --name Grace
 ```
 
-The server does not own a player or render a UI. The first two clients become active players and start the match.
-Later connections can watch the game and wait in a FIFO queue. When a player disconnects or loses, the winner
-stays and the next queued client is promoted.
+The server UI connects through the same WebSocket protocol as every other player, so the server remains
+independent from Player 1. Run `uvx textual-tetris connect` without a URL to use `ws://localhost:8765`.
+
+For a server without a local player, use headless mode and connect two clients:
+
+```bash
+uvx textual-tetris server --headless
+uvx textual-tetris connect --name Ada
+uvx textual-tetris connect --name Grace
+```
+
+Later connections can watch the game and wait in a FIFO queue. When a player disconnects or loses, the winner stays
+and the next queued client is promoted.
 
 Every interactive client uses arrow keys to move and rotate and Space to hard drop. Press `N` to change your
 visible name. Press `C` to open a one-line chat input; Enter sends, Escape cancels, and incoming messages appear as
@@ -63,7 +72,7 @@ Agents can also set their name and use chat:
 {"type": "chat", "message": "good luck"}
 ```
 
-The same server supports agent-versus-agent games: launch only `--server`, then connect two automated WebSocket
+The same server supports agent-versus-agent games: launch `server --headless`, then connect two automated WebSocket
 clients. Spectators receive state and chat events but their gameplay inputs are rejected.
 
 

@@ -37,6 +37,7 @@ NEXT_CONTAINER_WIDTH = PREVIEW_RENDER_WIDTH + 4
 PANEL_WIDGET_WIDTH = NEXT_CONTAINER_WIDTH
 SIDEBAR_WIDTH = NEXT_CONTAINER_WIDTH
 LOCK_DELAY = 0.5
+DEFAULT_SERVER_URL = "ws://localhost:8765"
 
 
 class TetrisBoard(Static):
@@ -476,16 +477,18 @@ class TetrisApp(App):
         network_mode: str | None = None,
         connect_url: str | None = None,
         player_name: str | None = None,
+        embedded_server: TetrisServer | None = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
         if network_mode not in {None, "client"}:
             raise ValueError(f"Unsupported network mode: {network_mode}")
-        if network_mode == "client" and not connect_url:
+        if network_mode == "client" and not connect_url and embedded_server is None:
             raise ValueError("A connect URL is required in client mode")
 
         self.network_mode = network_mode
         self.connect_url = connect_url
+        self.embedded_server = embedded_server
         self.two_players = two_players or network_mode is not None
         self.player_name = player_name
         self.client_id: int | None = None
@@ -766,7 +769,8 @@ class TetrisApp(App):
             self.call_after_refresh(self._start_game)
 
         if self.network_mode == "client":
-            self.run_worker(self._run_client())
+            worker = self._run_embedded_server() if self.embedded_server is not None else self._run_client()
+            self.run_worker(worker)
 
     def _update_all_displays(self):
         """Update all game displays after widgets are mounted"""
@@ -804,6 +808,14 @@ class TetrisApp(App):
             self.notify(f"Remote game disconnected: {error}", severity="error")
             self._set_waiting(True)
             self.query_one("#waiting-overlay", Static).update("DISCONNECTED")
+
+    async def _run_embedded_server(self) -> None:
+        assert self.embedded_server is not None
+        async with self.embedded_server.running():
+            self.notify(f"Server listening on ws://127.0.0.1:{self.embedded_server.port}")
+            self.connect_url = f"ws://127.0.0.1:{self.embedded_server.port}"
+            self._network_client = TetrisClient(self.connect_url)
+            await self._run_client()
 
     async def _handle_network_message(self, payload: dict[str, object]) -> None:
         message_type = payload.get("type")
@@ -1098,26 +1110,53 @@ class TetrisApp(App):
             return True
 
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Play Tetris in your terminal.")
     parser.add_argument(
         "-2p", "--2players", action="store_true", dest="two_players", help="Enable local two-player mode."
     )
-    network = parser.add_mutually_exclusive_group()
-    network.add_argument("--server", action="store_true", help="Run a headless multiplayer server.")
-    network.add_argument("--connect", metavar="URL", help="Connect to a remote game server.")
-    parser.add_argument("--host", default="0.0.0.0", help="Server bind host (default: 0.0.0.0).")
-    parser.add_argument("--port", type=int, default=8765, help="Server port (default: 8765).")
-    parser.add_argument("--name", help="Player name shown to other clients.")
-    args = parser.parse_args()
-    if args.server:
+    commands = parser.add_subparsers(dest="command")
+
+    server_parser = commands.add_parser("server", help="Host a remote game and play as Player 1.")
+    server_mode = server_parser.add_mutually_exclusive_group()
+    server_mode.add_argument("--headless", action="store_true", help="Run without a local player UI.")
+    server_mode.add_argument("--name", help="Name for the local Player 1.")
+    server_parser.add_argument("--host", default="0.0.0.0", help="Bind host (default: 0.0.0.0).")
+    server_parser.add_argument("--port", type=int, default=8765, help="Bind port (default: 8765).")
+
+    connect_parser = commands.add_parser("connect", help="Connect to a remote game.")
+    connect_parser.add_argument(
+        "url",
+        nargs="?",
+        default=DEFAULT_SERVER_URL,
+        help=f"Server WebSocket URL (default: {DEFAULT_SERVER_URL}).",
+    )
+    connect_parser.add_argument("--name", help="Player name shown to other clients.")
+    return parser
+
+
+def main() -> None:
+    args = build_parser().parse_args()
+    if args.command == "server":
+        server = TetrisServer(args.host, args.port)
+        if not args.headless:
+            TetrisApp(
+                network_mode="client",
+                player_name=args.name,
+                embedded_server=server,
+            ).run()
+            return
         with contextlib.suppress(KeyboardInterrupt):
-            asyncio.run(TetrisServer(args.host, args.port).serve_forever())
+            asyncio.run(server.serve_forever())
+        return
+    if args.command == "connect":
+        TetrisApp(
+            network_mode="client",
+            connect_url=args.url,
+            player_name=args.name,
+        ).run()
         return
     app = TetrisApp(
         two_players=args.two_players,
-        network_mode="client" if args.connect else None,
-        connect_url=args.connect,
-        player_name=args.name,
     )
     app.run()

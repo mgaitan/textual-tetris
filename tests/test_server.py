@@ -156,6 +156,28 @@ def test_textual_client_receives_role_and_visible_name() -> None:
     asyncio.run(run())
 
 
+def test_embedded_server_waits_for_a_remote_player() -> None:
+    async def run() -> None:
+        server = TetrisServer("127.0.0.1", 0)
+        app = TetrisApp(network_mode="client", player_name="tin", embedded_server=server)
+        async with app.run_test(size=(181, 59)) as pilot:
+            deadline = asyncio.get_running_loop().time() + 2
+            while app.controlled_player != 1 or app.players[1].name != "tin":
+                assert asyncio.get_running_loop().time() < deadline
+                await pilot.pause(0.05)
+
+            assert server.match.status == "waiting"
+            assert app.query_one("#game-container").has_class("waiting")
+
+            async with connect(f"ws://127.0.0.1:{server.port}"):
+                deadline = asyncio.get_running_loop().time() + 2
+                while server.match.status != "running" or app.query_one("#game-container").has_class("waiting"):
+                    assert asyncio.get_running_loop().time() < deadline
+                    await pilot.pause(0.05)
+
+    asyncio.run(run())
+
+
 def test_loser_can_join_again_when_no_challenger_is_waiting() -> None:
     async def run() -> None:
         server = TetrisServer("127.0.0.1", 0)
