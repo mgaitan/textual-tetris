@@ -440,14 +440,18 @@ class HelpScreen(ModalScreen[None]):
 
     BINDINGS: ClassVar = (("escape,h,enter,space", "close_help", "Close help"),)
 
-    def __init__(self, two_players: bool) -> None:
+    def __init__(self, two_players: bool, same_controls: bool = False) -> None:
         super().__init__()
         self.two_players = two_players
+        self.same_controls = same_controls
 
     def compose(self) -> ComposeResult:
         with Container(id="help-dialog"):
             yield Label("HELP", id="help-title")
-            if self.two_players:
+            if self.same_controls:
+                yield Label("Arrows: move & rotate", classes="help-line")
+                yield Label("Space: hard drop", classes="help-line")
+            elif self.two_players:
                 yield Label("P1: W/A/S/D move & rotate, Q drops", classes="help-line")
                 yield Label("P2: arrows move & rotate, Space drops", classes="help-line")
             else:
@@ -485,6 +489,20 @@ class TetrisApp(App):
         ("up", "player_two_rotate", "P2 Rotate"),
         ("space", "player_two_hard_drop", "P2 Drop"),
     )
+    REMOTE_SERVER_BINDINGS = (
+        ("left", "player_one_left", "Left"),
+        ("right", "player_one_right", "Right"),
+        ("down", "player_one_down", "Down"),
+        ("up", "player_one_rotate", "Rotate"),
+        ("space", "player_one_hard_drop", "Drop"),
+    )
+    REMOTE_CLIENT_BINDINGS = (
+        ("left", "player_two_left", "Left"),
+        ("right", "player_two_right", "Right"),
+        ("down", "player_two_down", "Down"),
+        ("up", "player_two_rotate", "Rotate"),
+        ("space", "player_two_hard_drop", "Drop"),
+    )
 
     OTHER_BINDINGS = (
         ("h", "help", "Help"),
@@ -521,6 +539,7 @@ class TetrisApp(App):
         self.server_port = server_port
         self.two_players = two_players or network_mode is not None
         self.game_timers = {}
+        self.game_started = False
         self.state_revision = 0
         self._network_client = None
         self._network_clients = set()
@@ -528,9 +547,9 @@ class TetrisApp(App):
         self.lines_per_level = 10
         self.players = {player_id: PlayerState() for player_id in ((1, 2) if self.two_players else (1,))}
         if network_mode == "client":
-            bindings = self.PLAYER_TWO_BINDINGS
+            bindings = self.REMOTE_CLIENT_BINDINGS
         elif network_mode == "server":
-            bindings = self.PLAYER_ONE_BINDINGS
+            bindings = self.REMOTE_SERVER_BINDINGS
         else:
             bindings = self.PLAYER_ONE_BINDINGS if two_players else self.SINGLE_PLAYER_BINDINGS
         for keys, action, description in bindings:
@@ -752,15 +771,11 @@ class TetrisApp(App):
                 )
             }
 
-        if self.network_mode != "client":
-            # Give widgets time to mount, then update displays.
-            self.call_after_refresh(self._update_all_displays)
-
-            # The server starts P2 when the remote client joins.
-            for player_id in self.players:
-                if self.network_mode == "server" and player_id == 2:
-                    continue
-                self.start_game_timer(player_id)
+        if self.network_mode == "server":
+            self.notify("Waiting for a remote player")
+        elif self.network_mode != "client":
+            # Give widgets time to mount, then start the local game.
+            self.call_after_refresh(self._start_game)
 
         if self.network_mode == "server":
             self.run_worker(self._run_server())
@@ -772,6 +787,17 @@ class TetrisApp(App):
         for player_id in self.players:
             self.spawn_next_piece(player_id)
             self._refresh_score_widget(player_id)
+
+    def _start_game(self) -> None:
+        if self.game_started:
+            if self.network_mode == "server":
+                for player_id in self.players:
+                    self.start_game_timer(player_id)
+            return
+        self.game_started = True
+        self._update_all_displays()
+        for player_id in self.players:
+            self.start_game_timer(player_id)
 
     @staticmethod
     def _piece_payload(piece: TetrisPiece | None) -> dict | None:
@@ -851,11 +877,11 @@ class TetrisApp(App):
             await websocket.close(1013, "A remote player is already connected")
             return
 
-        self._network_clients.add(websocket)
-        self.start_game_timer(2)
         self.notify("Remote player connected")
         try:
             await websocket.send(json.dumps(self._welcome_payload()))
+            self._start_game()
+            self._network_clients.add(websocket)
             await websocket.send(json.dumps(self._state_payload()))
             async for message in websocket:
                 try:
@@ -867,8 +893,9 @@ class TetrisApp(App):
                     self._apply_player_two_action(action)
         finally:
             self._network_clients.discard(websocket)
-            if not self._network_clients and (timer := self.game_timers.get(2)):
-                timer.pause()
+            if not self._network_clients:
+                for timer in self.game_timers.values():
+                    timer.pause()
             self.notify("Remote player disconnected")
 
     async def _run_client(self) -> None:
@@ -1104,7 +1131,7 @@ class TetrisApp(App):
 
     def action_help(self):
         """Show the help modal from the footer toolbar."""
-        self.push_screen(HelpScreen(self.two_players))
+        self.push_screen(HelpScreen(self.two_players, same_controls=self.network_mode is not None))
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         """Disable live controls when the game has ended."""

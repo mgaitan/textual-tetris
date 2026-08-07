@@ -22,7 +22,8 @@ uvx textual-tetris --server --port 8765
 uvx textual-tetris --connect ws://HOST:8765
 ```
 
-The server controls the game state; the connecting player controls P2 with the arrow keys and Space.
+The server waits for the client before starting. Both instances use the same controls: arrow keys to move and
+rotate, and Space to hard drop. The server is P1 and the connecting client is P2.
 
 An automated player can use the same WebSocket without rendering the terminal UI. On connection, the server
 sends a `welcome` message describing the protocol, role, valid actions, events, and state format, followed by

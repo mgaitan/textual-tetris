@@ -111,6 +111,9 @@ def test_server_describes_protocol_and_accepts_remote_input() -> None:
         app = TetrisApp(network_mode="server", server_port=0)
         async with app.run_test(size=(181, 59)) as pilot:
             await pilot.pause()
+            assert not app.game_started
+            assert app.player_panes[1].board_widget.current_piece is None
+            assert app.player_panes[2].board_widget.current_piece is None
             async with connect(f"ws://127.0.0.1:{app.server_port}") as websocket:
                 welcome = json.loads(await websocket.recv())
                 assert welcome["type"] == "welcome"
@@ -123,6 +126,7 @@ def test_server_describes_protocol_and_accepts_remote_input() -> None:
                 assert initial["type"] == "state"
                 assert isinstance(initial["revision"], int)
                 assert set(initial["players"]) == {"1", "2"}
+                assert app.game_started
 
                 piece = app.player_panes[2].board_widget.current_piece
                 assert piece is not None
@@ -148,3 +152,11 @@ def test_server_describes_protocol_and_accepts_remote_input() -> None:
                         break
 
     asyncio.run(run())
+
+
+def test_remote_modes_use_the_same_arrow_and_space_keys() -> None:
+    server_keys = {binding[0] for binding in TetrisApp.REMOTE_SERVER_BINDINGS}
+    client_keys = {binding[0] for binding in TetrisApp.REMOTE_CLIENT_BINDINGS}
+
+    assert server_keys == {"left", "right", "down", "up", "space"}
+    assert client_keys == server_keys
