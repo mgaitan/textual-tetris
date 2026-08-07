@@ -1,6 +1,7 @@
 import asyncio
 
 from textual.containers import Container, Vertical
+from textual.widgets import Footer
 
 from textris import (
     BOARD_WIDGET_WIDTH,
@@ -29,6 +30,19 @@ def test_piece_rotation_can_be_undone() -> None:
 
 def test_player_sidebar_is_narrower_than_the_board() -> None:
     assert PANEL_WIDGET_WIDTH < BOARD_WIDGET_WIDTH
+
+
+def test_two_player_boards_end_above_the_footer() -> None:
+    async def run() -> None:
+        app = TetrisApp(two_players=True)
+        async with app.run_test(size=(196, 47)) as pilot:
+            await pilot.pause()
+            footer = app.query_one(Footer)
+
+            assert app.player_panes[1].container.region.bottom <= footer.region.y
+            assert app.player_panes[2].container.region.bottom <= footer.region.y
+
+    asyncio.run(run())
 
 
 def test_both_players_receive_independent_pieces_and_controls() -> None:

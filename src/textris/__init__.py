@@ -529,7 +529,7 @@ class TetrisApp(App):
         height: 1fr;
         align: center middle;
         background: #111927;
-        padding: 1 2;
+        padding: 0 2;
         layers: base overlay;
     }
 
