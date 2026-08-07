@@ -151,7 +151,7 @@ def test_textual_client_receives_role_and_visible_name() -> None:
                         await pilot.pause(0.05)
                     assert app.network_role == "player"
                     assert not app.query_one("#game-container").has_class("waiting")
-                    assert str(app.player_panes[2].name_widget.render()) == "Ada"
+                    assert app.player_panes[2].score_widget.player_name == "Ada"
 
     asyncio.run(run())
 

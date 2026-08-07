@@ -249,11 +249,17 @@ class NextPieceWidget(Static):
 class ScoreWidget(Static):
     """Widget to display score and level"""
 
+    player_name = reactive("Player 1")
     score = reactive(0)
     level = reactive(1)
     lines = reactive(0)
 
+    def __init__(self, player_name: str = "Player 1", **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.player_name = player_name
+
     def compose(self) -> ComposeResult:
+        yield Label(self.player_name, classes="player-name")
         yield Label(f"SCORE {self.score}", id="score-value", classes="section-title")
         yield Label(f"LEVEL {self.level}", id="level-value", classes="score-number")
         yield Label(f"LINES {self.lines}", id="lines-value", classes="section-title")
@@ -261,6 +267,10 @@ class ScoreWidget(Static):
     def watch_score(self, score: int) -> None:
         with contextlib.suppress(NoMatches):
             self.query_one("#score-value", Label).update(f"SCORE {score}")
+
+    def watch_player_name(self, player_name: str) -> None:
+        with contextlib.suppress(NoMatches):
+            self.query_one(".player-name", Label).update(player_name)
 
     def watch_level(self, level: int) -> None:
         with contextlib.suppress(NoMatches):
@@ -278,7 +288,6 @@ class PlayerView:
     board_widget: TetrisBoard
     next_widget: NextPieceWidget
     score_widget: ScoreWidget
-    name_widget: Label
     container: Container
     overlay_widget: Static
 
@@ -289,23 +298,18 @@ class PlayerPane(Container):
     def __init__(self, player_id: int, state: PlayerState, **kwargs) -> None:
         super().__init__(**kwargs)
         self.player_id = player_id
-        self.name_widget = Label(state.name, classes="player-name")
         self.board_widget = TetrisBoard(player_id, state.board, classes="player-board")
         self.next_widget = NextPieceWidget(classes="player-panel next-widget")
-        self.score_widget = ScoreWidget(classes="player-panel score-widget")
+        self.score_widget = ScoreWidget(state.name, classes="player-panel score-widget")
         self.overlay_widget = Static("GAME OVER\nPress R to restart", classes="game-over-overlay")
 
     def compose(self) -> ComposeResult:
-        yield self.name_widget
         with Horizontal(classes="player-layout"):
             yield self.board_widget
             with Vertical(classes="player-sidebar"):
                 yield self.next_widget
                 yield self.score_widget
         yield self.overlay_widget
-
-    def update_name(self, name: str) -> None:
-        self.name_widget.update(name)
 
 
 class HelpScreen(ModalScreen[None]):
@@ -711,14 +715,13 @@ class TetrisApp(App):
                     yield PlayerPane(2, self.players[2], id="player-two", classes="player-pane")
                 else:
                     with Container(id="board-container"):
-                        yield Label(self.players[1].name, id="single-player-name", classes="player-name")
                         yield TetrisBoard(1, self.players[1].board, id="board")
                         yield Static("GAME OVER\nPress R to restart", id="game-over-overlay")
                     with Vertical(id="sidebar"):
                         with Container(id="next-piece-container"):
                             yield NextPieceWidget(id="next-piece")
                         with Container(id="score-container"):
-                            yield ScoreWidget(id="score-widget")
+                            yield ScoreWidget(self.players[1].name, id="score-widget")
             if self.network_mode == "client":
                 yield Static("CONNECTING TO SERVER", id="waiting-overlay")
         yield Footer()
@@ -733,7 +736,6 @@ class TetrisApp(App):
                     first_player.board_widget,
                     first_player.next_widget,
                     first_player.score_widget,
-                    first_player.name_widget,
                     first_player,
                     first_player.overlay_widget,
                 ),
@@ -741,7 +743,6 @@ class TetrisApp(App):
                     second_player.board_widget,
                     second_player.next_widget,
                     second_player.score_widget,
-                    second_player.name_widget,
                     second_player,
                     second_player.overlay_widget,
                 ),
@@ -753,7 +754,6 @@ class TetrisApp(App):
                     self.query_one("#board", TetrisBoard),
                     self.query_one("#next-piece", NextPieceWidget),
                     self.query_one("#score-widget", ScoreWidget),
-                    self.query_one("#single-player-name", Label),
                     board_container,
                     self.query_one("#game-over-overlay", Static),
                 )
@@ -862,7 +862,7 @@ class TetrisApp(App):
             state.lines_cleared = player_payload["lines"]
             state.game_over = player_payload["game_over"]
             view = self.player_panes[player_id]
-            view.name_widget.update(state.name)
+            view.score_widget.player_name = state.name
             view.overlay_widget.display = state.game_over
             view.container.set_class(state.game_over, "game-over")
             board.update_display()
@@ -996,7 +996,7 @@ class TetrisApp(App):
             self._send_network({"type": "name", "name": name})
             return
         self.players[1].name = name
-        self.player_panes[1].name_widget.update(name)
+        self.player_panes[1].score_widget.player_name = name
 
     def action_player_two_name(self) -> None:
         if self.two_players and self.network_mode is None:
@@ -1005,7 +1005,7 @@ class TetrisApp(App):
     def _submit_player_two_name(self, name: str | None) -> None:
         if name and (name := " ".join(name.split())[:24]):
             self.players[2].name = name
-            self.player_panes[2].name_widget.update(name)
+            self.player_panes[2].score_widget.player_name = name
 
     def action_join_queue(self) -> None:
         if self.network_mode == "client" and self.network_role == "spectator":

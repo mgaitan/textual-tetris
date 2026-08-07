@@ -118,7 +118,9 @@ def test_local_player_names_are_visible_and_changeable() -> None:
             app._submit_name("Ada")
             app._submit_player_two_name("Grace")
 
-            assert str(app.player_panes[1].name_widget.render()) == "Ada"
-            assert str(app.player_panes[2].name_widget.render()) == "Grace"
+            assert app.player_panes[1].score_widget.player_name == "Ada"
+            assert app.player_panes[2].score_widget.player_name == "Grace"
+            assert app.player_panes[1].score_widget.query_one(".player-name").parent is app.player_panes[1].score_widget
+            assert app.player_panes[2].score_widget.query_one(".player-name").parent is app.player_panes[2].score_widget
 
     asyncio.run(run())
