@@ -24,6 +24,7 @@ classifiers = [
 ]
 dependencies = [
     "textual>=6.6.0",
+    "websockets>=17.0",
 ]
 
 [build-system]

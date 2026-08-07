@@ -1,6 +1,8 @@
 import asyncio
+import json
 
 from textual.containers import Container, Vertical
+from websockets.asyncio.client import connect
 
 from textris import (
     BOARD_WIDGET_WIDTH,
@@ -100,5 +102,39 @@ def test_hard_drop_allows_a_grounded_piece_to_be_adjusted_before_locking() -> No
 
             await pilot.pause(LOCK_DELAY / 2 + 0.1)
             assert board.current_piece is not piece
+
+    asyncio.run(run())
+
+
+def test_agent_mode_mounts_two_players() -> None:
+    async def run() -> None:
+        app = TetrisApp(network_mode="agent")
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            assert set(app.players) == {1, 2}
+            assert len(app.query(PlayerPane)) == 2
+
+    asyncio.run(run())
+
+
+def test_server_sends_state_and_accepts_remote_input() -> None:
+    async def run() -> None:
+        app = TetrisApp(network_mode="server", server_port=0)
+        async with app.run_test(size=(181, 59)) as pilot:
+            await pilot.pause()
+            async with connect(f"ws://127.0.0.1:{app.server_port}") as websocket:
+                initial = json.loads(await websocket.recv())
+                assert initial["type"] == "state"
+                assert set(initial["players"]) == {"1", "2"}
+
+                piece = app.player_panes[2].board_widget.current_piece
+                assert piece is not None
+                initial_x = piece.x
+                await websocket.send(json.dumps({"type": "input", "action": "left"}))
+                await pilot.pause()
+                await websocket.recv()
+                piece = app.player_panes[2].board_widget.current_piece
+                assert piece is not None
+                assert piece.x == initial_x - 1
 
     asyncio.run(run())

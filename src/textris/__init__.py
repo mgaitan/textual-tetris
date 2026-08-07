@@ -1,5 +1,7 @@
 import argparse
+import asyncio
 import contextlib
+import json
 import os
 import random
 import sys
@@ -15,6 +17,8 @@ from textual.reactive import reactive
 from textual.screen import ModalScreen
 from textual.timer import Timer
 from textual.widgets import Footer, Label, Static
+from websockets.asyncio.client import connect
+from websockets.asyncio.server import serve
 
 # Compact hex-based shape definitions (4x4 grid)
 PIECES = {
@@ -490,16 +494,45 @@ class TetrisApp(App):
     LIVE_ACTIONS: ClassVar = tuple(
         binding[1] for binding in SINGLE_PLAYER_BINDINGS + PLAYER_ONE_BINDINGS + PLAYER_TWO_BINDINGS
     )
+    NETWORK_ACTIONS: ClassVar = {"left", "right", "down", "rotate", "drop"}
 
-    def __init__(self, two_players: bool = False, **kwargs) -> None:
+    def __init__(
+        self,
+        two_players: bool = False,
+        network_mode: str | None = None,
+        connect_url: str | None = None,
+        server_host: str = "0.0.0.0",
+        server_port: int = 8765,
+        **kwargs,
+    ) -> None:
         super().__init__(**kwargs)
-        self.two_players = two_players
+        if network_mode not in {None, "server", "client", "agent"}:
+            raise ValueError(f"Unsupported network mode: {network_mode}")
+        if network_mode == "client" and not connect_url:
+            raise ValueError("A connect URL is required in client mode")
+
+        self.network_mode = network_mode
+        self.connect_url = connect_url
+        self.server_host = server_host
+        self.server_port = server_port
+        self.two_players = two_players or network_mode is not None
         self.game_timers = {}
+        self.agent_timer: Timer | None = None
+        self.agent_step_count = 0
+        self._network_client = None
+        self._network_clients = set()
+        self._network_tasks = set()
         self.lines_per_level = 10
-        self.players = {player_id: PlayerState() for player_id in ((1, 2) if two_players else (1,))}
-        for keys, action, description in self.PLAYER_ONE_BINDINGS if two_players else self.SINGLE_PLAYER_BINDINGS:
+        self.players = {player_id: PlayerState() for player_id in ((1, 2) if self.two_players else (1,))}
+        if network_mode == "client":
+            bindings = self.PLAYER_TWO_BINDINGS
+        elif network_mode in {"server", "agent"}:
+            bindings = self.PLAYER_ONE_BINDINGS
+        else:
+            bindings = self.PLAYER_ONE_BINDINGS if two_players else self.SINGLE_PLAYER_BINDINGS
+        for keys, action, description in bindings:
             self.bind(keys, action, description=description)
-        if two_players:
+        if two_players and network_mode is None:
             for keys, action, description in self.PLAYER_TWO_BINDINGS:
                 self.bind(keys, action, description=description)
 
@@ -683,7 +716,7 @@ class TetrisApp(App):
                         yield ScoreWidget(id="score-widget")
         yield Footer()
 
-    def on_mount(self):
+    def on_mount(self) -> None:
         """Initialize the game"""
         if self.two_players:
             first_player = self.query_one("#player-one", PlayerPane)
@@ -716,18 +749,180 @@ class TetrisApp(App):
                 )
             }
 
-        # Give widgets time to mount, then update displays
-        self.call_after_refresh(self._update_all_displays)
+        if self.network_mode != "client":
+            # Give widgets time to mount, then update displays.
+            self.call_after_refresh(self._update_all_displays)
 
-        # Start an independent drop timer for each active player.
-        for player_id in self.players:
-            self.start_game_timer(player_id)
+            # The server starts P2 when the remote client joins.
+            for player_id in self.players:
+                if self.network_mode == "server" and player_id == 2:
+                    continue
+                self.start_game_timer(player_id)
+
+            if self.network_mode == "agent":
+                self.agent_timer = self.set_interval(0.75, self._agent_step)
+
+        if self.network_mode == "server":
+            self.run_worker(self._run_server())
+        elif self.network_mode == "client":
+            self.run_worker(self._run_client())
 
     def _update_all_displays(self):
         """Update all game displays after widgets are mounted"""
         for player_id in self.players:
             self.spawn_next_piece(player_id)
             self._refresh_score_widget(player_id)
+
+    @staticmethod
+    def _piece_payload(piece: TetrisPiece | None) -> dict | None:
+        if piece is None:
+            return None
+        return {"type": piece.type, "x": piece.x, "y": piece.y, "code": piece.code}
+
+    def _state_payload(self) -> dict:
+        return {
+            "type": "state",
+            "players": {
+                str(player_id): {
+                    "board": state_view.board,
+                    "current_piece": self._piece_payload(state_view.current_piece),
+                    "next_piece": self._piece_payload(self.players[player_id].next_piece),
+                    "score": self.players[player_id].score,
+                    "level": self.players[player_id].level,
+                    "lines": self.players[player_id].lines_cleared,
+                    "game_over": self.players[player_id].game_over,
+                }
+                for player_id, state_view in (
+                    (player_id, self.player_panes[player_id].board_widget) for player_id in self.players
+                )
+            },
+        }
+
+    def _broadcast_state(self) -> None:
+        if self.network_mode == "server" and self._network_clients:
+            self._schedule_network_task(self._send_state())
+
+    def _schedule_network_task(self, coroutine) -> None:
+        task = asyncio.create_task(coroutine)
+        self._network_tasks.add(task)
+        task.add_done_callback(self._network_tasks.discard)
+
+    async def _send_state(self) -> None:
+        message = json.dumps(self._state_payload())
+        for websocket in tuple(self._network_clients):
+            try:
+                await websocket.send(message)
+            except Exception:
+                self._network_clients.discard(websocket)
+
+    async def _run_server(self) -> None:
+        async with serve(self._handle_client, self.server_host, self.server_port) as server:
+            port = server.sockets[0].getsockname()[1]
+            self.server_port = port
+            self.notify(f"Server listening on ws://127.0.0.1:{port}")
+            await asyncio.Future()
+
+    async def _handle_client(self, websocket) -> None:
+        if self._network_clients:
+            await websocket.close(1013, "A remote player is already connected")
+            return
+
+        self._network_clients.add(websocket)
+        self.start_game_timer(2)
+        self.notify("Remote player connected")
+        try:
+            await websocket.send(json.dumps(self._state_payload()))
+            async for message in websocket:
+                try:
+                    payload = json.loads(message)
+                except json.JSONDecodeError:
+                    continue
+                action = payload.get("action")
+                if payload.get("type") == "input" and action in self.NETWORK_ACTIONS:
+                    self._apply_player_two_action(action)
+        finally:
+            self._network_clients.discard(websocket)
+            if not self._network_clients and (timer := self.game_timers.get(2)):
+                timer.pause()
+            self.notify("Remote player disconnected")
+
+    async def _run_client(self) -> None:
+        try:
+            assert self.connect_url is not None
+            async with connect(self.connect_url) as websocket:
+                self._network_client = websocket
+                self.notify("Connected to remote game")
+                async for message in websocket:
+                    payload = json.loads(message)
+                    if payload.get("type") == "state":
+                        self._apply_state(payload)
+        except Exception as error:
+            self.notify(f"Remote game disconnected: {error}", severity="error")
+        finally:
+            self._network_client = None
+
+    def _send_input(self, action: str) -> None:
+        if self._network_client:
+            self._schedule_network_task(
+                self._network_client.send(json.dumps({"type": "input", "action": action}))
+            )
+
+    @staticmethod
+    def _piece_from_payload(payload: dict | None) -> TetrisPiece | None:
+        if payload is None:
+            return None
+        piece = TetrisPiece(payload["type"])
+        if payload["code"] in piece.codes:
+            while piece.code != payload["code"]:
+                piece.rotate()
+        piece.x = payload["x"]
+        piece.y = payload["y"]
+        return piece
+
+    def _apply_state(self, payload: dict) -> None:
+        for player_id, player_payload in payload["players"].items():
+            player_id = int(player_id)
+            state = self.players[player_id]
+            board = self.player_panes[player_id].board_widget
+            board.board = player_payload["board"]
+            board.current_piece = self._piece_from_payload(player_payload["current_piece"])
+            next_piece = self._piece_from_payload(player_payload["next_piece"])
+            if next_piece is not None:
+                state.next_piece = next_piece
+            state.score = player_payload["score"]
+            state.level = player_payload["level"]
+            state.lines_cleared = player_payload["lines"]
+            state.game_over = player_payload["game_over"]
+            view = self.player_panes[player_id]
+            view.overlay_widget.display = state.game_over
+            view.container.set_class(state.game_over, "game-over")
+            board.update_display()
+            if next_piece is not None:
+                view.next_widget.update_piece(next_piece)
+            self._refresh_score_widget(player_id)
+
+    def _apply_player_two_action(self, action: str) -> None:
+        if action == "left":
+            self._move_piece(2, -1, 0)
+        elif action == "right":
+            self._move_piece(2, 1, 0)
+        elif action == "down":
+            self._move_piece(2, 0, 1)
+        elif action == "rotate":
+            self._rotate_piece(2)
+        elif action == "drop":
+            self._hard_drop(2)
+
+    def _agent_step(self) -> None:
+        if self.players[2].game_over:
+            return
+        self.agent_step_count += 1
+        if self.agent_step_count % 5 == 0:
+            self._hard_drop(2)
+            return
+        if self.agent_step_count % 3 == 0:
+            self._rotate_piece(2)
+        self._move_piece(2, -1 if self.agent_step_count % 2 else 1, 0)
 
     def start_game_timer(self, player_id: int) -> None:
         """Start or reset one player's automatic piece-dropping timer."""
@@ -743,14 +938,17 @@ class TetrisApp(App):
         state = self.players[player_id]
         if not state.game_over:
             self.player_panes[player_id].board_widget.move_piece(0, 1)
+            self._broadcast_state()
 
     def _move_piece(self, player_id: int, dx: int, dy: int) -> None:
         if (state := self.players.get(player_id)) and not state.game_over:
             self.player_panes[player_id].board_widget.move_piece(dx, dy)
+            self._broadcast_state()
 
     def _rotate_piece(self, player_id: int) -> None:
         if (state := self.players.get(player_id)) and not state.game_over:
             self.player_panes[player_id].board_widget.rotate_piece()
+            self._broadcast_state()
 
     def _hard_drop(self, player_id: int) -> None:
         """Instantly drop the piece to the lowest valid position."""
@@ -759,6 +957,7 @@ class TetrisApp(App):
         board = self.player_panes[player_id].board_widget
         while not self.players[player_id].game_over and board.move_piece(0, 1):
             pass
+        self._broadcast_state()
 
     def action_player_one_left(self) -> None:
         self._move_piece(1, -1, 0)
@@ -776,18 +975,33 @@ class TetrisApp(App):
         self._hard_drop(1)
 
     def action_player_two_left(self) -> None:
+        if self.network_mode == "client":
+            self._send_input("left")
+            return
         self._move_piece(2, -1, 0)
 
     def action_player_two_right(self) -> None:
+        if self.network_mode == "client":
+            self._send_input("right")
+            return
         self._move_piece(2, 1, 0)
 
     def action_player_two_down(self) -> None:
+        if self.network_mode == "client":
+            self._send_input("down")
+            return
         self._move_piece(2, 0, 1)
 
     def action_player_two_rotate(self) -> None:
+        if self.network_mode == "client":
+            self._send_input("rotate")
+            return
         self._rotate_piece(2)
 
     def action_player_two_hard_drop(self) -> None:
+        if self.network_mode == "client":
+            self._send_input("drop")
+            return
         self._hard_drop(2)
 
     def on_piece_locked(self, player_id: int, cleared_lines: int) -> None:
@@ -810,6 +1024,7 @@ class TetrisApp(App):
             self.start_game_timer(player_id)
 
         self._refresh_score_widget(player_id)
+        self._broadcast_state()
 
     def spawn_next_piece(self, player_id: int) -> None:
         """Move queued next piece to the board and queue another."""
@@ -823,6 +1038,7 @@ class TetrisApp(App):
             return
         board.update_display()
         self._queue_new_piece(player_id)
+        self._broadcast_state()
 
     def _queue_new_piece(self, player_id: int) -> None:
         """Create the next piece and update the preview widget."""
@@ -880,6 +1096,19 @@ def main() -> None:
     parser.add_argument(
         "-2p", "--2players", action="store_true", dest="two_players", help="Enable local two-player mode."
     )
+    network = parser.add_mutually_exclusive_group()
+    network.add_argument("--server", action="store_true", help="Host a remote two-player game.")
+    network.add_argument("--connect", metavar="URL", help="Connect to a remote game server.")
+    network.add_argument("--agent", action="store_true", help="Play against a simple local agent.")
+    parser.add_argument("--host", default="0.0.0.0", help="Server bind host (default: 0.0.0.0).")
+    parser.add_argument("--port", type=int, default=8765, help="Server port (default: 8765).")
     args = parser.parse_args()
-    app = TetrisApp(two_players=args.two_players)
+    network_mode = "server" if args.server else "client" if args.connect else "agent" if args.agent else None
+    app = TetrisApp(
+        two_players=args.two_players,
+        network_mode=network_mode,
+        connect_url=args.connect,
+        server_host=args.host,
+        server_port=args.port,
+    )
     app.run()

@@ -15,6 +15,20 @@ For local multiplayer:
 uvx textual-tetris --2players
 ```
 
+For a remote game, start one host and share its port with the other player:
+
+```bash
+uvx textual-tetris --server --port 8765
+uvx textual-tetris --connect ws://HOST:8765
+```
+
+The server controls the game state; the connecting player controls P2 with the arrow keys and Space.
+To play against the built-in minimal agent instead:
+
+```bash
+uvx textual-tetris --agent
+```
+
 Blog post: https://mgaitan.github.io/en/posts/textual-tetris/
 
 
