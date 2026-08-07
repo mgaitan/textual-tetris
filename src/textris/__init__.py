@@ -588,6 +588,7 @@ class TetrisApp(App):
         padding: 1;
         background: #22303d;
         border: round #f4f1de;
+        border-bottom: solid #f4f1de;
     }
 
     .player-panel {
