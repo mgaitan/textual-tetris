@@ -571,12 +571,32 @@ class TetrisApp(App):
         align: center middle;
         background: #111927;
         padding: 1 2;
+        layers: base overlay;
     }
 
     #playfield {
         width: auto;
         height: auto;
         align: center middle;
+        layer: base;
+    }
+
+    #waiting-overlay {
+        layer: overlay;
+        width: 38;
+        height: auto;
+        padding: 2 3;
+        content-align: center middle;
+        text-align: center;
+        text-style: bold;
+        color: #f8fafc;
+        background: #070c14 94%;
+        border: round #7dd3fc;
+        display: none;
+    }
+
+    #game-container.waiting #waiting-overlay {
+        display: block;
     }
 
     #board-container {
@@ -723,19 +743,22 @@ class TetrisApp(App):
     )
 
     def compose(self) -> ComposeResult:
-        with Container(id="game-container"), Horizontal(id="playfield"):
-            if self.two_players:
-                yield PlayerPane(1, id="player-one", classes="player-pane")
-                yield PlayerPane(2, id="player-two", classes="player-pane")
-            else:
-                with Container(id="board-container"):
-                    yield TetrisBoard(1, id="board")
-                    yield Static("GAME OVER\nPress R to restart", id="game-over-overlay")
-                with Vertical(id="sidebar"):
-                    with Container(id="next-piece-container"):
-                        yield NextPieceWidget(id="next-piece")
-                    with Container(id="score-container"):
-                        yield ScoreWidget(id="score-widget")
+        with Container(id="game-container"):
+            with Horizontal(id="playfield"):
+                if self.two_players:
+                    yield PlayerPane(1, id="player-one", classes="player-pane")
+                    yield PlayerPane(2, id="player-two", classes="player-pane")
+                else:
+                    with Container(id="board-container"):
+                        yield TetrisBoard(1, id="board")
+                        yield Static("GAME OVER\nPress R to restart", id="game-over-overlay")
+                    with Vertical(id="sidebar"):
+                        with Container(id="next-piece-container"):
+                            yield NextPieceWidget(id="next-piece")
+                        with Container(id="score-container"):
+                            yield ScoreWidget(id="score-widget")
+            if self.network_mode == "server":
+                yield Static("WAITING FOR PLAYER 2\n\nStart the game from another instance", id="waiting-overlay")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -772,7 +795,7 @@ class TetrisApp(App):
             }
 
         if self.network_mode == "server":
-            self.notify("Waiting for a remote player")
+            self._set_waiting(True)
         elif self.network_mode != "client":
             # Give widgets time to mount, then start the local game.
             self.call_after_refresh(self._start_game)
@@ -787,6 +810,9 @@ class TetrisApp(App):
         for player_id in self.players:
             self.spawn_next_piece(player_id)
             self._refresh_score_widget(player_id)
+
+    def _set_waiting(self, waiting: bool) -> None:
+        self.query_one("#game-container", Container).set_class(waiting, "waiting")
 
     def _start_game(self) -> None:
         if self.game_started:
@@ -805,10 +831,34 @@ class TetrisApp(App):
             return None
         return {"piece_id": piece.piece_id, "type": piece.type, "x": piece.x, "y": piece.y, "code": piece.code}
 
+    @staticmethod
+    def _piece_catalog() -> dict:
+        return {
+            piece_type: {
+                "color": definition["color"],
+                "rotations": [
+                    {
+                        "code": code,
+                        "blocks": [[int(char, 16) % 4, int(char, 16) // 4] for char in code],
+                    }
+                    for code in definition["codes"]
+                ],
+            }
+            for piece_type, definition in PIECES.items()
+        }
+
+    def _game_status(self) -> str:
+        if not self.game_started:
+            return "waiting"
+        if not self._has_active_players():
+            return "game_over"
+        return "running"
+
     def _state_payload(self) -> dict:
         return {
             "type": "state",
             "revision": self.state_revision,
+            "status": self._game_status(),
             "players": {
                 str(player_id): {
                     "board": state_view.board,
@@ -842,14 +892,21 @@ class TetrisApp(App):
             "protocol": self.NETWORK_PROTOCOL,
             "role": "player2",
             "actions": list(self.NETWORK_ACTIONS),
-            "input": {"type": "input", "action": "<action>"},
-            "events": ["state", "piece_locked"],
+            "input": {"type": "input", "id": "<optional client-defined id>", "action": "<action>"},
+            "events": ["state", "piece_locked", "ack"],
+            "pieces": self._piece_catalog(),
             "state": {
                 "revision": "monotonically increasing integer; ignore older messages",
+                "status": "waiting, running, or game_over",
                 "board": "20 rows of 10 cells, top to bottom; 0 means empty",
                 "current_piece": "piece_id, type, x, y, and rotation code, or null",
                 "next_piece": "piece_id, type, x, y, and rotation code",
+                "score": "current player's score",
+                "level": "current player's level",
+                "lines": "current player's cleared line count",
+                "players": "both player snapshots, keyed by player id",
             },
+            "ack": {"id": "echoed input id", "accepted": "whether the action was applied; sent when id is present"},
         }
 
     def _schedule_network_task(self, coroutine) -> None:
@@ -880,6 +937,7 @@ class TetrisApp(App):
         self.notify("Remote player connected")
         try:
             await websocket.send(json.dumps(self._welcome_payload()))
+            self._set_waiting(False)
             self._start_game()
             self._network_clients.add(websocket)
             await websocket.send(json.dumps(self._state_payload()))
@@ -888,14 +946,20 @@ class TetrisApp(App):
                     payload = json.loads(message)
                 except json.JSONDecodeError:
                     continue
+                if not isinstance(payload, dict):
+                    continue
                 action = payload.get("action")
-                if payload.get("type") == "input" and action in self.NETWORK_ACTIONS:
-                    self._apply_player_two_action(action)
+                if payload.get("type") != "input":
+                    continue
+                accepted = self._apply_player_two_action(action)
+                if "id" in payload:
+                    self._broadcast_event({"type": "ack", "id": payload["id"], "accepted": accepted})
         finally:
             self._network_clients.discard(websocket)
             if not self._network_clients:
                 for timer in self.game_timers.values():
                     timer.pause()
+                self._set_waiting(True)
             self.notify("Remote player disconnected")
 
     async def _run_client(self) -> None:
@@ -951,7 +1015,9 @@ class TetrisApp(App):
                 view.next_widget.update_piece(next_piece)
             self._refresh_score_widget(player_id)
 
-    def _apply_player_two_action(self, action: str) -> None:
+    def _apply_player_two_action(self, action: str) -> bool:
+        if action not in self.NETWORK_ACTIONS or self.players[2].game_over:
+            return False
         if action == "left":
             self._move_piece(2, -1, 0)
         elif action == "right":
@@ -962,6 +1028,7 @@ class TetrisApp(App):
             self._rotate_piece(2)
         elif action == "drop":
             self._hard_drop(2)
+        return True
 
     def start_game_timer(self, player_id: int) -> None:
         """Start or reset one player's automatic piece-dropping timer."""
