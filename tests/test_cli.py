@@ -1,5 +1,3 @@
-import pytest
-
 from textris import DEFAULT_SERVER_URL, build_parser
 
 
@@ -22,5 +20,9 @@ def test_connect_defaults_to_the_local_server() -> None:
 
 
 def test_headless_server_cannot_have_a_local_player_name() -> None:
-    with pytest.raises(SystemExit):
+    try:
         build_parser().parse_args(["server", "--headless", "--name", "tin"])
+    except SystemExit as error:
+        assert error.code == 2
+    else:
+        raise AssertionError("Mutually exclusive server options were accepted")
