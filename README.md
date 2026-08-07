@@ -20,23 +20,29 @@ uvx textual-tetris --2players
 
 ## Remote games
 
-For a remote game, start one host and share its port with the other player:
+Start a headless server, then connect two players:
 
 ```bash
 uvx textual-tetris --server --port 8765
-uvx textual-tetris --connect ws://HOST:8765
+uvx textual-tetris --connect ws://HOST:8765 --name Ada
+uvx textual-tetris --connect ws://HOST:8765 --name Grace
 ```
 
-The server waits for the client before starting. Both instances use the same controls: arrow keys to move and
-rotate, and Space to hard drop. The server is P1 and the connecting client is P2.
+The server does not own a player or render a UI. The first two clients become active players and start the match.
+Later connections can watch the game and wait in a FIFO queue. When a player disconnects or loses, the winner
+stays and the next queued client is promoted.
+
+Every interactive client uses arrow keys to move and rotate and Space to hard drop. Press `N` to change your
+visible name. Press `C` to open a one-line chat input; Enter sends, Escape cancels, and incoming messages appear as
+non-blocking notifications. A player who becomes a spectator can press `J` to join the challenger queue again.
 
 ## Agentic player
 
 An automated AI (like Codex) player can use the same WebSocket without rendering the terminal UI. 
 
-On connection, the server
-sends a `welcome` message describing the protocol, role, valid actions, events, and state format, followed by
-`state` snapshots. 
+On connection, the server sends a `welcome` message describing protocol v2, the assigned role and player id,
+valid messages and events, and the piece catalog. It then sends revisioned `state` snapshots containing both
+players and the complete connection roster.
 
 The welcome also includes the complete piece catalog: each rotation code maps to its four
 relative block coordinates, so the client does not need to know how pieces are encoded internally. 
@@ -49,6 +55,16 @@ Send actions as JSON, for example:
 ```json
 {"type": "input", "id": 42, "action": "left"}
 ```
+
+Agents can also set their name and use chat:
+
+```json
+{"type": "name", "name": "Codex"}
+{"type": "chat", "message": "good luck"}
+```
+
+The same server supports agent-versus-agent games: launch only `--server`, then connect two automated WebSocket
+clients. Spectators receive state and chat events but their gameplay inputs are rejected.
 
 
 ## Screenshots
@@ -71,6 +87,8 @@ Send actions as JSON, for example:
 ### Controls
 In the default one-player mode, use arrows or `W/A/S/D` to move and rotate, and `Space` or `Q` to hard drop.
 
+In remote mode, use arrows and Space. `C` opens chat, `N` changes your player name, and `J` joins the queue.
+
 With `--2players`:
 | Key | Action |
 | --- | --- |
@@ -78,5 +96,6 @@ With `--2players`:
 | `Q` (Player 1) | Hard drop |
 | `← / → / ↓ / ↑` (Player 2) | Move left/right, soft drop, rotate |
 | `Space` (Player 2) | Hard drop |
+| `N / Shift+N` | Change Player 1 / Player 2 name |
 | `Ctrl+Q` | Quit |
 | `R` | Restart after a game-over |
