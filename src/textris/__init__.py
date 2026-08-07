@@ -7,6 +7,7 @@ import random
 import sys
 from collections import deque
 from dataclasses import dataclass, field
+from itertools import count
 from typing import ClassVar, cast
 
 from rich.text import Text
@@ -45,6 +46,7 @@ NEXT_CONTAINER_WIDTH = PREVIEW_RENDER_WIDTH + 4
 PANEL_WIDGET_WIDTH = NEXT_CONTAINER_WIDTH
 SIDEBAR_WIDTH = NEXT_CONTAINER_WIDTH
 LOCK_DELAY = 0.5
+PIECE_IDS = count(1)
 
 
 def coords_to_matrix(coords):
@@ -60,11 +62,12 @@ def coords_to_matrix(coords):
 
 
 class TetrisPiece:
-    def __init__(self, piece_type=None):
+    def __init__(self, piece_type=None, piece_id: int | None = None):
         if piece_type is None:
             piece_type = random.choice(list(PIECES.keys()))
 
         self.type = piece_type
+        self.piece_id = next(PIECE_IDS) if piece_id is None else piece_id
         self.color = PIECES[piece_type]["color"]
         self.codes = deque(PIECES[piece_type]["codes"])
         self.x = 4  # Start at center of board
@@ -518,6 +521,7 @@ class TetrisApp(App):
         self.server_port = server_port
         self.two_players = two_players or network_mode is not None
         self.game_timers = {}
+        self.state_revision = 0
         self._network_client = None
         self._network_clients = set()
         self._network_tasks = set()
@@ -773,11 +777,12 @@ class TetrisApp(App):
     def _piece_payload(piece: TetrisPiece | None) -> dict | None:
         if piece is None:
             return None
-        return {"type": piece.type, "x": piece.x, "y": piece.y, "code": piece.code}
+        return {"piece_id": piece.piece_id, "type": piece.type, "x": piece.x, "y": piece.y, "code": piece.code}
 
     def _state_payload(self) -> dict:
         return {
             "type": "state",
+            "revision": self.state_revision,
             "players": {
                 str(player_id): {
                     "board": state_view.board,
@@ -795,8 +800,15 @@ class TetrisApp(App):
         }
 
     def _broadcast_state(self) -> None:
+        self.state_revision += 1
         if self.network_mode == "server" and self._network_clients:
-            self._schedule_network_task(self._send_state())
+            self._schedule_network_task(self._send_payload(self._state_payload()))
+
+    def _broadcast_event(self, event: dict) -> None:
+        self.state_revision += 1
+        if self.network_mode == "server" and self._network_clients:
+            event["revision"] = self.state_revision
+            self._schedule_network_task(self._send_payload(event))
 
     def _welcome_payload(self) -> dict:
         return {
@@ -805,10 +817,12 @@ class TetrisApp(App):
             "role": "player2",
             "actions": list(self.NETWORK_ACTIONS),
             "input": {"type": "input", "action": "<action>"},
+            "events": ["state", "piece_locked"],
             "state": {
+                "revision": "monotonically increasing integer; ignore older messages",
                 "board": "20 rows of 10 cells, top to bottom; 0 means empty",
-                "current_piece": "type, x, y, and rotation code, or null",
-                "next_piece": "type, x, y, and rotation code",
+                "current_piece": "piece_id, type, x, y, and rotation code, or null",
+                "next_piece": "piece_id, type, x, y, and rotation code",
             },
         }
 
@@ -817,8 +831,8 @@ class TetrisApp(App):
         self._network_tasks.add(task)
         task.add_done_callback(self._network_tasks.discard)
 
-    async def _send_state(self) -> None:
-        message = json.dumps(self._state_payload())
+    async def _send_payload(self, payload: dict) -> None:
+        message = json.dumps(payload)
         for websocket in tuple(self._network_clients):
             try:
                 await websocket.send(message)
@@ -880,7 +894,7 @@ class TetrisApp(App):
     def _piece_from_payload(payload: dict | None) -> TetrisPiece | None:
         if payload is None:
             return None
-        piece = TetrisPiece(payload["type"])
+        piece = TetrisPiece(payload["type"], payload["piece_id"])
         if payload["code"] in piece.codes:
             while piece.code != payload["code"]:
                 piece.rotate()
@@ -1022,6 +1036,15 @@ class TetrisApp(App):
             self.start_game_timer(player_id)
 
         self._refresh_score_widget(player_id)
+        piece = self.player_panes[player_id].board_widget.current_piece
+        self._broadcast_event(
+            {
+                "type": "piece_locked",
+                "player": player_id,
+                "piece_id": piece.piece_id if piece else None,
+                "cleared_lines": cleared_lines,
+            }
+        )
         self._broadcast_state()
 
     def spawn_next_piece(self, player_id: int) -> None:
@@ -1068,6 +1091,7 @@ class TetrisApp(App):
         if timer := self.game_timers.get(player_id):
             timer.pause()
         self.refresh_bindings()
+        self._broadcast_state()
 
     def _has_active_players(self) -> bool:
         return any(not state.game_over for state in self.players.values())
