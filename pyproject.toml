@@ -67,6 +67,7 @@ select = [
 
 [tool.pytest.ini_options]
 addopts = ["--strict-markers", "--strict-config", "-ra"]
+asyncio_mode = "auto"
 
 [dependency-groups]
 lint = [
@@ -78,6 +79,7 @@ qa = [
 ]
 test = [
     "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
 ]
 
 [project.urls]
