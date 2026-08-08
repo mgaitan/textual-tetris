@@ -41,14 +41,14 @@ uvx textual-tetris connect --name Grace
 Use watch-only mode to observe without occupying a player slot or joining the challenger queue:
 
 ```bash
-uvx textual-tetris connect ws://HOST:8765 --justwatch --name Observer
+uvx textual-tetris connect ws://HOST:8765 --watch-only --name Observer
 ```
 
 For an agent-versus-agent game with a local spectator UI, start the server itself in watch-only mode, then connect
 both agents to `ws://localhost:8765`:
 
 ```bash
-uvx textual-tetris server --justwatch
+uvx textual-tetris server --watch-only
 ```
 
 Other spectators wait in a FIFO queue by default. When a player disconnects or loses, the winner stays and the next
@@ -105,7 +105,7 @@ Agents can also set their name and use chat:
 {"type": "chat", "message": "good luck"}
 ```
 
-The same server supports agent-versus-agent games: launch `server --headless` for no UI or `server --justwatch` to
+The same server supports agent-versus-agent games: launch `server --headless` for no UI or `server --watch-only` to
 watch locally, then connect two automated WebSocket clients. A raw watch-only client can connect with
 `?role=spectator`; it receives state and chat events but can never become a player.
 

@@ -12,10 +12,10 @@ def test_server_defaults_to_a_local_player() -> None:
 
 
 def test_server_can_watch_without_occupying_a_player_slot() -> None:
-    args = build_parser().parse_args(["server", "--justwatch"])
+    args = build_parser().parse_args(["server", "--watch-only"])
 
     assert args.command == "server"
-    assert args.justwatch is True
+    assert args.watch_only is True
     assert args.headless is False
     assert args.name is None
 
@@ -29,10 +29,10 @@ def test_connect_defaults_to_the_local_server() -> None:
 
 
 def test_connect_can_be_watch_only() -> None:
-    args = build_parser().parse_args(["connect", "--justwatch", "ws://example.test:8765"])
+    args = build_parser().parse_args(["connect", "--watch-only", "ws://example.test:8765"])
 
     assert args.url == "ws://example.test:8765"
-    assert args.justwatch is True
+    assert args.watch_only is True
 
 
 def test_headless_server_cannot_have_a_local_player_name() -> None:
@@ -46,7 +46,7 @@ def test_headless_server_cannot_have_a_local_player_name() -> None:
 
 def test_headless_and_watch_only_server_modes_are_exclusive() -> None:
     try:
-        build_parser().parse_args(["server", "--headless", "--justwatch"])
+        build_parser().parse_args(["server", "--headless", "--watch-only"])
     except SystemExit as error:
         assert error.code == 2
     else:

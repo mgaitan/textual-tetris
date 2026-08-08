@@ -351,17 +351,17 @@ class HelpScreen(ModalScreen[None]):
 
     BINDINGS: ClassVar = (("escape,h,enter,space", "close_help", "Close help"),)
 
-    def __init__(self, two_players: bool, same_controls: bool = False, just_watch: bool = False) -> None:
+    def __init__(self, two_players: bool, same_controls: bool = False, watch_only: bool = False) -> None:
         super().__init__()
         self.two_players = two_players
         self.same_controls = same_controls
-        self.just_watch = just_watch
+        self.watch_only = watch_only
 
     def compose(self) -> ComposeResult:
         with Container(id="help-dialog"):
             yield Label("HELP", id="help-title")
             if self.same_controls:
-                if not self.just_watch:
+                if not self.watch_only:
                     yield Label("Arrows: move & rotate", classes="help-line")
                     yield Label("Space: hard drop", classes="help-line")
                     yield Label("C: chat, N: name, J: join queue", classes="help-line")
@@ -483,7 +483,7 @@ class TetrisApp(App):
         connect_url: str | None = None,
         player_name: str | None = None,
         embedded_server: TetrisServer | None = None,
-        just_watch: bool = False,
+        watch_only: bool = False,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
@@ -491,13 +491,13 @@ class TetrisApp(App):
             raise ValueError(f"Unsupported network mode: {network_mode}")
         if network_mode == "client" and not connect_url and embedded_server is None:
             raise ValueError("A connect URL is required in client mode")
-        if just_watch and network_mode != "client":
+        if watch_only and network_mode != "client":
             raise ValueError("Watch-only mode requires a network client")
 
         self.network_mode = network_mode
         self.connect_url = connect_url
         self.embedded_server = embedded_server
-        self.just_watch = just_watch
+        self.watch_only = watch_only
         self.two_players = two_players or network_mode is not None
         self.player_name = player_name
         self.client_id: int | None = None
@@ -508,7 +508,7 @@ class TetrisApp(App):
         self.game_timers = {}
         self.game_started = False
         self.state_revision = 0
-        self._network_client = TetrisClient(connect_url, just_watch=just_watch) if connect_url else None
+        self._network_client = TetrisClient(connect_url, watch_only=watch_only) if connect_url else None
         self._network_tasks = set()
         self.lines_per_level = 10
         player_ids = (1, 2) if self.two_players else (1,)
@@ -823,7 +823,7 @@ class TetrisApp(App):
         async with self.embedded_server.running():
             self.notify(f"Server listening on ws://127.0.0.1:{self.embedded_server.port}")
             self.connect_url = f"ws://127.0.0.1:{self.embedded_server.port}"
-            self._network_client = TetrisClient(self.connect_url, just_watch=self.just_watch)
+            self._network_client = TetrisClient(self.connect_url, watch_only=self.watch_only)
             await self._run_client()
 
     async def _handle_network_message(self, payload: dict[str, object]) -> None:
@@ -832,7 +832,7 @@ class TetrisApp(App):
             client_id = payload.get("client_id")
             self.client_id = client_id if isinstance(client_id, int) else None
             self.client_name = str(payload.get("name", ""))
-            self.just_watch = self.just_watch or payload.get("watch_only") is True
+            self.watch_only = self.watch_only or payload.get("watch_only") is True
             self._apply_role(payload)
             self.notify("Connected to remote game")
             if self.player_name and self._network_client is not None:
@@ -854,7 +854,7 @@ class TetrisApp(App):
             self._schedule_network_task(self._network_client.send(payload))
 
     def _send_input(self, action: str) -> None:
-        if self.just_watch:
+        if self.watch_only:
             return
         self._send_network({"type": "input", "action": action})
 
@@ -1032,7 +1032,7 @@ class TetrisApp(App):
             self.player_panes[2].score_widget.player_name = name
 
     def action_join_queue(self) -> None:
-        if self.network_mode == "client" and self.network_role == "spectator" and not self.just_watch:
+        if self.network_mode == "client" and self.network_role == "spectator" and not self.watch_only:
             self._send_network({"type": "join"})
 
     def on_piece_locked(self, player_id: int, cleared_lines: int, piece_id: int) -> None:
@@ -1108,7 +1108,7 @@ class TetrisApp(App):
     def action_help(self):
         """Show the help modal from the footer toolbar."""
         self.push_screen(
-            HelpScreen(self.two_players, same_controls=self.network_mode is not None, just_watch=self.just_watch)
+            HelpScreen(self.two_players, same_controls=self.network_mode is not None, watch_only=self.watch_only)
         )
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
@@ -1117,10 +1117,10 @@ class TetrisApp(App):
             return False
         if action == "chat" and self.network_mode != "client":
             return False
-        if self.just_watch and action in self.REMOTE_LIVE_ACTIONS:
+        if self.watch_only and action in self.REMOTE_LIVE_ACTIONS:
             return False
         if action == "join_queue" and not (
-            self.network_mode == "client" and self.network_role == "spectator" and not self.just_watch
+            self.network_mode == "client" and self.network_role == "spectator" and not self.watch_only
         ):
             return False
         # ref: https://textual.textualize.io/guide/actions/#dynamic-actions
@@ -1138,7 +1138,12 @@ def build_parser() -> argparse.ArgumentParser:
     server_parser = commands.add_parser("server", help="Host a remote game.")
     server_mode = server_parser.add_mutually_exclusive_group()
     server_mode.add_argument("--headless", action="store_true", help="Run without a local player UI.")
-    server_mode.add_argument("--justwatch", action="store_true", help="Watch without occupying a player slot.")
+    server_mode.add_argument(
+        "--watch-only",
+        action="store_true",
+        dest="watch_only",
+        help="Watch without occupying a player slot.",
+    )
     server_mode.add_argument("--name", help="Name for the local Player 1.")
     server_parser.add_argument("--host", default="0.0.0.0", help="Bind host (default: 0.0.0.0).")
     server_parser.add_argument("--port", type=int, default=8765, help="Bind port (default: 8765).")
@@ -1151,7 +1156,12 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"Server WebSocket URL (default: {DEFAULT_SERVER_URL}).",
     )
     connect_parser.add_argument("--name", help="Player name shown to other clients.")
-    connect_parser.add_argument("--justwatch", action="store_true", help="Watch without joining the player queue.")
+    connect_parser.add_argument(
+        "--watch-only",
+        action="store_true",
+        dest="watch_only",
+        help="Watch without joining the player queue.",
+    )
     return parser
 
 
@@ -1164,7 +1174,7 @@ def main() -> None:
                 network_mode="client",
                 player_name=args.name,
                 embedded_server=server,
-                just_watch=args.justwatch,
+                watch_only=args.watch_only,
             ).run()
             return
         with contextlib.suppress(KeyboardInterrupt):
@@ -1175,7 +1185,7 @@ def main() -> None:
             network_mode="client",
             connect_url=args.url,
             player_name=args.name,
-            just_watch=args.justwatch,
+            watch_only=args.watch_only,
         ).run()
         return
     app = TetrisApp(
