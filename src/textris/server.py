@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from itertools import count
+from urllib.parse import parse_qs, urlsplit
 
 from websockets.asyncio.server import ServerConnection, serve
 
@@ -25,6 +26,8 @@ class ClientSession:
     role: str = "spectator"
     player_id: int | None = None
     queued: bool = False
+    watch_only: bool = False
+    custom_name: bool = False
 
 
 class TetrisServer:
@@ -58,7 +61,13 @@ class TetrisServer:
 
     async def _handle_client(self, websocket: ServerConnection) -> None:
         client_id = next(self._client_ids)
-        session = ClientSession(websocket, client_id, f"Player {client_id}")
+        watch_only = self._watch_only(websocket)
+        session = ClientSession(
+            websocket,
+            client_id,
+            f"Spectator {client_id}" if watch_only else f"Player {client_id}",
+            watch_only=watch_only,
+        )
         async with self._lock:
             self.clients[websocket] = session
             self._place_new_client(session)
@@ -121,6 +130,7 @@ class TetrisServer:
         if not isinstance(value, str) or not (name := self._clean_name(value)):
             return
         session.name = name
+        session.custom_name = True
         if session.player_id in self.match.players:
             self.match.players[session.player_id].name = name
         await self._broadcast_event(
@@ -147,7 +157,7 @@ class TetrisServer:
         )
 
     async def _join_queue(self, session: ClientSession) -> None:
-        if session.player_id is not None or session.queued:
+        if session.watch_only or session.player_id is not None or session.queued:
             return
         if len(self.active_players) < 2:
             vacant_id = next(player_id for player_id in (1, 2) if player_id not in self.active_players)
@@ -189,6 +199,8 @@ class TetrisServer:
                 await self._broadcast_state()
 
     def _place_new_client(self, session: ClientSession) -> None:
+        if session.watch_only:
+            return
         for player_id in (1, 2):
             if player_id not in self.active_players:
                 self._assign_player(session, player_id)
@@ -197,6 +209,8 @@ class TetrisServer:
         self.waiting_players.append(session)
 
     def _assign_player(self, session: ClientSession, player_id: int) -> None:
+        if not session.custom_name:
+            session.name = f"Player {player_id}"
         session.role = "player"
         session.player_id = player_id
         session.queued = False
@@ -287,6 +301,7 @@ class TetrisServer:
                 "role": session.role,
                 "player_id": session.player_id,
                 "queue_position": self._queue_position(session),
+                "watch_only": session.watch_only,
                 "revision": self.revision,
             },
         )
@@ -301,6 +316,8 @@ class TetrisServer:
             "role": session.role,
             "player_id": session.player_id,
             "queue_position": self._queue_position(session),
+            "watch_only": session.watch_only,
+            "spectator_query": "role=spectator",
             "actions": list(NETWORK_ACTIONS),
             "messages": ["input", "name", "chat", "join"],
             "events": [
@@ -344,6 +361,7 @@ class TetrisServer:
                         "role": session.role,
                         "player_id": session.player_id,
                         "queue_position": self._queue_position(session),
+                        "watch_only": session.watch_only,
                     }
                     for session in self.clients.values()
                 ],
@@ -376,6 +394,14 @@ class TetrisServer:
         if not session.queued:
             return None
         return list(self.waiting_players).index(session) + 1
+
+    @staticmethod
+    def _watch_only(websocket: ServerConnection) -> bool:
+        request = websocket.request
+        if request is None:
+            return False
+        query = parse_qs(urlsplit(request.path).query)
+        return query.get("role") == ["spectator"]
 
     @staticmethod
     def _clean_name(value: str) -> str:

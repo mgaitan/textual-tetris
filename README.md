@@ -38,12 +38,45 @@ uvx textual-tetris connect --name Ada
 uvx textual-tetris connect --name Grace
 ```
 
-Later connections can watch the game and wait in a FIFO queue. When a player disconnects or loses, the winner stays
-and the next queued client is promoted.
+Use watch-only mode to observe without occupying a player slot or joining the challenger queue:
+
+```bash
+uvx textual-tetris connect ws://HOST:8765 --justwatch --name Observer
+```
+
+For an agent-versus-agent game with a local spectator UI, start the server itself in watch-only mode, then connect
+both agents to `ws://localhost:8765`:
+
+```bash
+uvx textual-tetris server --justwatch
+```
+
+Other spectators wait in a FIFO queue by default. When a player disconnects or loses, the winner stays and the next
+queued client is promoted. Watch-only clients are never promoted.
 
 Every interactive client uses arrow keys to move and rotate and Space to hard drop. Press `N` to change your
 visible name. Press `C` to open a one-line chat input; Enter sends, Escape cancels, and incoming messages appear as
 non-blocking notifications. A player who becomes a spectator can press `J` to join the challenger queue again.
+
+## Share over the internet
+
+For a temporary game, a [Cloudflare Quick Tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/)
+can expose the local WebSocket server without opening an inbound port or requiring a Cloudflare account. Install
+`cloudflared`, bind the game locally, and start the tunnel in another terminal:
+
+```bash
+uvx textual-tetris server --host 127.0.0.1 --port 8765 --name Ada
+cloudflared tunnel --url http://localhost:8765
+```
+
+`cloudflared` prints a temporary `https://<random>.trycloudflare.com` URL. Replace `https` with `wss` when connecting:
+
+```bash
+uvx textual-tetris connect wss://<random>.trycloudflare.com --name Grace
+```
+
+Quick Tunnel URLs change whenever `cloudflared` restarts and are intended for testing and short-lived games. Use a
+[named Cloudflare Tunnel](https://developers.cloudflare.com/tunnel/setup/) when a stable hostname is required.
 
 ## Agentic player
 
@@ -72,8 +105,9 @@ Agents can also set their name and use chat:
 {"type": "chat", "message": "good luck"}
 ```
 
-The same server supports agent-versus-agent games: launch `server --headless`, then connect two automated WebSocket
-clients. Spectators receive state and chat events but their gameplay inputs are rejected.
+The same server supports agent-versus-agent games: launch `server --headless` for no UI or `server --justwatch` to
+watch locally, then connect two automated WebSocket clients. A raw watch-only client can connect with
+`?role=spectator`; it receives state and chat events but can never become a player.
 
 
 ## Screenshots

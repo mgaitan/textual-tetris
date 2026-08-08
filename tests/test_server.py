@@ -105,6 +105,47 @@ def test_next_queued_client_is_promoted_after_disconnect() -> None:
     asyncio.run(run())
 
 
+def test_watch_only_client_never_occupies_or_queues_for_a_player_slot() -> None:
+    async def run() -> None:
+        server = TetrisServer("127.0.0.1", 0)
+        async with server.running():
+            url = f"ws://127.0.0.1:{server.port}"
+            async with connect(f"{url}?role=spectator") as watcher:
+                welcome = json.loads(await watcher.recv())
+                assert welcome["role"] == "spectator"
+                assert welcome["player_id"] is None
+                assert welcome["queue_position"] is None
+                assert welcome["watch_only"] is True
+                assert welcome["spectator_query"] == "role=spectator"
+                assert welcome["name"] == "Spectator 1"
+
+                await watcher.send(json.dumps({"type": "join"}))
+                await watcher.send(json.dumps({"type": "chat", "message": "watching"}))
+                await receive_until(watcher, "chat")
+
+                async with connect(url) as first, connect(url) as second:
+                    welcome_one = json.loads(await first.recv())
+                    welcome_two = json.loads(await second.recv())
+                    assert welcome_one["player_id"] == 1
+                    assert welcome_one["name"] == "Player 1"
+                    assert welcome_two["player_id"] == 2
+                    assert welcome_two["name"] == "Player 2"
+
+                    running = await receive_until(watcher, "state", lambda message: message["status"] == "running")
+                    observer = next(member for member in running["roster"] if member["watch_only"])
+                    assert observer["player_id"] is None
+                    assert observer["queue_position"] is None
+
+                    await second.close()
+                    deadline = asyncio.get_running_loop().time() + 2
+                    while len(server.active_players) != 1:
+                        assert asyncio.get_running_loop().time() < deadline
+                        await asyncio.sleep(0.01)
+                    assert all(not session.watch_only for session in server.active_players.values())
+
+    asyncio.run(run())
+
+
 def test_next_queued_client_is_promoted_after_game_over() -> None:
     async def run() -> None:
         server = TetrisServer("127.0.0.1", 0)
@@ -170,6 +211,32 @@ def test_embedded_server_waits_for_a_remote_player() -> None:
             assert app.query_one("#game-container").has_class("waiting")
 
             async with connect(f"ws://127.0.0.1:{server.port}"):
+                deadline = asyncio.get_running_loop().time() + 2
+                while server.match.status != "running" or app.query_one("#game-container").has_class("waiting"):
+                    assert asyncio.get_running_loop().time() < deadline
+                    await pilot.pause(0.05)
+
+    asyncio.run(run())
+
+
+def test_embedded_watch_only_server_leaves_both_player_slots_available() -> None:
+    async def run() -> None:
+        server = TetrisServer("127.0.0.1", 0)
+        app = TetrisApp(network_mode="client", embedded_server=server, just_watch=True)
+        async with app.run_test(size=(181, 59)) as pilot:
+            deadline = asyncio.get_running_loop().time() + 2
+            while app.client_id is None:
+                assert asyncio.get_running_loop().time() < deadline
+                await pilot.pause(0.05)
+
+            assert app.network_role == "spectator"
+            assert app.controlled_player is None
+            assert server.active_players == {}
+
+            url = f"ws://127.0.0.1:{server.port}"
+            async with connect(url) as first, connect(url) as second:
+                assert json.loads(await first.recv())["player_id"] == 1
+                assert json.loads(await second.recv())["player_id"] == 2
                 deadline = asyncio.get_running_loop().time() + 2
                 while server.match.status != "running" or app.query_one("#game-container").has_class("waiting"):
                     assert asyncio.get_running_loop().time() < deadline
