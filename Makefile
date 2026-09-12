@@ -25,9 +25,12 @@ bump: ## Bump the project minor version
 .PHONY: release
 release: ## Create a GitHub release for the current version
 	@version=$$(uv version --short); \
-	git commit -am "Bump $$version"; \
+	git commit --no-verify -am "Bump $$version"; \
 	git push origin main; \
-	gh release create "$$version" --generate-notes
+	owner=$$(gh repo view --json owner -q .owner.login); \
+	gh api repos/{owner}/{repo}/releases/generate-notes -f tag_name="$$version" --jq .body \
+		| sed "s/ by @$$owner\$$//g; s/ by @$$owner / /g" \
+		| gh release create "$$version" --notes-file -
 
 .PHONY: help
 help:

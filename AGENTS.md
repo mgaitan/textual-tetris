@@ -7,7 +7,8 @@ Repository: https://github.com/mgaitan/textual-tetris
 
 ## Stack
 
-- **Python:** Python 3.14. Check main dependencies in `pyproject.toml`.
+- **Python:** Python 3.15. Check main dependencies in `pyproject.toml`.
+- **Tests:** pytest, factory-boy, pytest-mock. `make test` to run tests. or `uv run pytest`
 - **Productivity:** Dependencies managed with `uv` via `pyproject.toml`;
 - **lint/format:** Ruff.
 
