@@ -6,7 +6,7 @@
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-project = "copier-update-placeholder-textual-tetris-20260912"
+project = "textual-tetris"
 copyright = "2026, Martín Gaitán"
 author = "Martín Gaitán"
 

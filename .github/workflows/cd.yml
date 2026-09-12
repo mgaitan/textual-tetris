@@ -10,6 +10,7 @@ on:
       - "docs/**"
       - "README.md"
       - "CONTRIBUTING.md"
+      - "CODE_OF_CONDUCT.md"
       - ".github/workflows/cd.yml"
   pull_request:
     branches:
@@ -18,6 +19,7 @@ on:
       - "docs/**"
       - "README.md"
       - "CONTRIBUTING.md"
+      - "CODE_OF_CONDUCT.md"
       - ".github/workflows/cd.yml"
   workflow_dispatch:
 

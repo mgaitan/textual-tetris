@@ -2,7 +2,7 @@
 
 [![ci](https://github.com/mgaitan/textual-tetris/workflows/ci/badge.svg)](https://github.com/mgaitan/textual-tetris/actions?query=workflow%3Aci)
 [![docs](https://img.shields.io/badge/docs-blue.svg?style=flat)](https://mgaitan.github.io/textual-tetris/)
-[![pypi version](https://img.shields.io/pypi/v/copier-update-placeholder-textual-tetris-20260912.svg)](https://pypi.org/project/copier-update-placeholder-textual-tetris-20260912/)
+[![pypi version](https://img.shields.io/pypi/v/textual-tetris.svg)](https://pypi.org/project/textual-tetris/)
 [![Changelog](https://img.shields.io/github/v/release/mgaitan/textual-tetris?include_prereleases&label=changelog)](https://github.com/mgaitan/textual-tetris/releases)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/mgaitan/textual-tetris/actions/workflows/ci.yml)
 [![ty](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ty/main/assets/badge/v0.json)](https://github.com/astral-sh/ty)
@@ -16,19 +16,19 @@ A Tetris game for your terminal, built with the Textual framework.
 Run directly without installing via `uvx`:
 
 ```bash
-uvx --with=copier-update-placeholder-textual-tetris-20260912 textual-tetris --help
+uvx textual-tetris --help
 ```
 
 When running from source, we use {term}`PYTHONPATH` in docs examples so the local package is importable without an install step.
 
-```{richterm} env PYTHONPATH=../src uv run -m textris --help
+```{richterm} uv run textual-tetris --help
 :hide-command: true
 ```
 
 To install the tool permanently, use:
 
 ```bash
-uv tool install copier-update-placeholder-textual-tetris-20260912
+uv tool install textual-tetris
 ```
 
 ## Documentation Map (Diataxis)
@@ -73,6 +73,6 @@ about_the_docs.md
 :maxdepth: 2
 :caption: Project Policies
 
-../CONTRIBUTING.md
-../CODE_OF_CONDUCT.md
+CONTRIBUTING.md
+CODE_OF_CONDUCT.md
 ```

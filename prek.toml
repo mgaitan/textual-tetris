@@ -27,7 +27,7 @@ repo = "local"
 id = "ruff-check"
 name = "ruff check"
 language = "system"
-entry = "uv run ruff check --fix"
+entry = "uv run --only-group lint ruff check --fix"
 pass_filenames = false
 always_run = true
 
@@ -35,7 +35,7 @@ always_run = true
 id = "ruff-format"
 name = "ruff format"
 language = "system"
-entry = "uv run ruff format"
+entry = "uv run --only-group lint ruff format"
 pass_filenames = false
 always_run = true
 
@@ -43,6 +43,6 @@ always_run = true
 id = "ty-check"
 name = "ty check"
 language = "system"
-entry = "uv run ty check"
+entry = "uv run --group qa ty check"
 pass_filenames = false
 always_run = true

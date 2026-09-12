@@ -1,4 +1,4 @@
-.PHONY: install lint format type test qa bump release help
+.PHONY: install lint format type test qa bump release docs docs-html docs-open help
 
 export UV_MALWARE_CHECK := 1
 
@@ -25,12 +25,27 @@ bump: ## Bump the project minor version
 .PHONY: release
 release: ## Create a GitHub release for the current version
 	@version=$$(uv version --short); \
-	git commit -am "Bump $$version"; \
+	git commit --no-verify -am "Bump $$version"; \
 	git push origin main; \
 	owner=$$(gh repo view --json owner -q .owner.login); \
 	gh api repos/{owner}/{repo}/releases/generate-notes -f tag_name="$$version" --jq .body \
 		| sed "s/ by @$$owner\$$//g; s/ by @$$owner / /g" \
 		| gh release create "$$version" --notes-file -
+
+.PHONY: docs docs-html docs-open
+
+DOCS_SOURCE := docs
+DOCS_BUILD := $(DOCS_SOURCE)/_build
+
+docs: ## Build HTML documentation (default).
+	@$(MAKE) docs-html
+
+docs-html: ## Build documentation as static HTML.
+	@echo "📖 Building HTML documentation"
+	@uv run --group docs sphinx-build $(DOCS_SOURCE) $(DOCS_BUILD)/html -b html -W
+
+docs-open: docs-html ## Build docs and open them in the browser.
+	@uv run -m webbrowser docs/_build/html/index.html
 
 .PHONY: help
 help:
