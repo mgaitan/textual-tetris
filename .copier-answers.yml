@@ -1,5 +1,5 @@
 # Changes here will be overwritten by Copier.
-_commit: 29932c707177fa2cbe8f3898af6839608d238898
+_commit: 0.7.0
 _src_path: https://github.com/mgaitan/python-package-copier-template
 author_email: gaitan@gmail.com
 author_fullname: Martín Gaitán
@@ -12,4 +12,3 @@ python_package_command_line_name: textual-tetris
 python_package_distribution_name: textual-tetris
 python_package_import_name: textris
 repository_name: textual-tetris
-repository_namespace: mgaitan
